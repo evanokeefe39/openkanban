@@ -156,17 +156,18 @@ html[data-show-status='0'] .chip.blocks {
 /* Highlight fills are graded by chroma, not by a single mix ratio: the palette runs
    pink -> orange -> cream, and equal mixes collapse P0 and P1 into the same dark maroon
    (measured 5-9 RGB apart). P0 therefore takes the strongest wash so urgency still reads in
-   the fill, P1 stays a whisper, and P2 — near-desaturated cream — needs the heavier mix to
-   register at all. Cream is the binding constraint: past 38% its fill drops below AA for
-   the card text. Measured at these values: P0 rgb(100,37,66) contrast 9.1, P1 rgb(66,39,49)
-   contrast 11, P2 rgb(90,93,95) contrast 5.4, against a base of rgb(23,23,42); pairwise
-   gaps 38/75/64. */
+   the fill, P1 sits in the middle, and P2 — near-desaturated cream — needs a heavy mix to
+   register at all. Cream is the binding constraint: past 38% its fill drops below AA for the
+   card text. Measured on the live board at these values: P0 rgb(113,38,70) contrast 8.3,
+   P1 rgb(78,43,51) contrast 10, P2 rgb(90,93,95) contrast 5.4, against a card surface of
+   rgb(23,23,42) — pairwise gaps 40/68/65, lifts from the surface 96/59/108, so no tier is
+   closer to the plain card than the eye can see. */
 html[data-highlight-priority='1'] .card[data-prio='1'] {
-  background: color-mix(in oklab, var(--color-priority-p0) 38%, var(--card-bg));
+  background: color-mix(in oklab, var(--color-priority-p0) 44%, var(--card-bg));
   border-color: color-mix(in oklab, var(--color-priority-p0) 48%, var(--line));
 }
 html[data-highlight-priority='1'] .card[data-prio='2'] {
-  background: color-mix(in oklab, var(--color-priority-p1) 22%, var(--card-bg));
+  background: color-mix(in oklab, var(--color-priority-p1) 28%, var(--card-bg));
   border-color: color-mix(in oklab, var(--color-priority-p1) 48%, var(--line));
 }
 html[data-highlight-priority='1'] .card[data-prio='3'] {
@@ -310,6 +311,14 @@ html[data-highlight-priority='1'] .card[data-prio='3'] {
   border-color: var(--ivory);
   color: #000;
 }
+/* lucide icons (vendored inline SVG): sized to the caption type, inheriting the button's colour */
+.icon {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  margin-right: 6px;
+  vertical-align: -2px;
+}
 .btn.primary {
   background: var(--ivory);
   border-color: var(--ivory);
@@ -344,6 +353,7 @@ html[data-highlight-priority='1'] .card[data-prio='3'] {
   display: flex;
   flex-direction: column;
   border-bottom: 1px solid var(--line);
+  position: relative;
 }
 .filter-strip {
   display: flex;
@@ -393,13 +403,21 @@ html[data-highlight-priority='1'] .card[data-prio='3'] {
   display: none;
 }
 
+/* the pane floats over the board rather than pushing it down — the design rejects shadows, so the
+   floating read comes from an opaque elevated surface and a stronger border than the strip's */
 .filter-panel {
+  position: absolute;
+  top: 100%;
+  left: 12px;
+  z-index: 40;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  width: max-content;
+  max-width: min(680px, calc(100vw - 24px));
   padding: 10px 12px 12px;
-  border-top: 1px solid var(--line);
-  background: var(--color-background-subtle);
+  border: 1px solid var(--line-strong);
+  background: var(--color-surface-elevated);
 }
 .filter-panel[hidden] {
   display: none;
@@ -746,7 +764,10 @@ button.chip[aria-pressed='true']:hover {
   border-color: var(--line-strong);
 }
 .card-main {
-  display: block;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 6px;
   width: 100%;
   text-align: left;
   font-family: inherit;
@@ -777,9 +798,45 @@ button.chip[aria-pressed='true']:hover {
   flex-wrap: wrap;
   gap: var(--density-meta-gap);
   margin-top: var(--density-meta-top);
+  grid-column: 1 / -1;
+  align-self: start;
 }
 .card-meta:empty {
   display: none;
+}
+/* ticket number: assigned once, never reused, and the handle people say out loud */
+.card-num {
+  font-size: 10px;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  color: var(--color-foreground-muted);
+  font-variant-numeric: tabular-nums;
+}
+html[data-show-numbers='0'] .card-num {
+  display: none;
+}
+html[data-show-numbers='0'] .card-main {
+  column-gap: 0;
+}
+/* the wiring in numbers — only while D is held, so the resting card stays quiet */
+.card-refs {
+  display: none;
+  grid-column: 1 / -1;
+  align-self: start;
+  gap: 10px;
+  margin-top: 4px;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+html[data-deps-mode='1'] .card-refs {
+  display: flex;
+}
+.ref-up {
+  color: rgba(245, 158, 11, 0.9);
+}
+.ref-down {
+  color: rgba(129, 132, 245, 0.9);
 }
 .card.dragging {
   opacity: 0.4;
@@ -797,6 +854,12 @@ button.chip[aria-pressed='true']:hover {
 .card[data-chain='self'] {
   box-shadow: inset 0 0 0 1px rgba(249, 255, 208, 0.85);
 }
+/* when priority is on the board as colour — rails or full-card tint — hovering a card rings it in
+   its own priority instead of the neutral cream, so the hover reads as that card, not as a mode */
+html[data-show-priority='1'] .card[data-chain='self'],
+html[data-highlight-priority='1'] .card[data-chain='self'] {
+  box-shadow: inset 0 0 0 1px var(--prio-color, rgba(249, 255, 208, 0.85));
+}
 .card[data-chain='up'] {
   box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.6);
 }
@@ -805,6 +868,42 @@ button.chip[aria-pressed='true']:hover {
 }
 .card[data-chain='up-down'] {
   box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.6), inset 0 0 0 3px rgba(99, 102, 241, 0.35);
+}
+
+/* hold-D overlay: the same two hues as the chain, worn by every card at once */
+html[data-deps-mode='1'] .card[data-deps='waits'] {
+  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.7);
+}
+html[data-deps-mode='1'] .card[data-deps='holds'] {
+  box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.7);
+}
+html[data-deps-mode='1'] .card[data-deps='both'] {
+  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.7), inset 0 0 0 3px rgba(99, 102, 241, 0.45);
+}
+
+/* the hint doubles as the mode indicator: the label the key is named after */
+.deps-indicator {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  padding: 2px 6px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--color-foreground-muted);
+  white-space: nowrap;
+}
+.deps-on {
+  display: none;
+}
+html[data-deps-mode='1'] .deps-keys {
+  display: none;
+}
+html[data-deps-mode='1'] .deps-indicator {
+  border-color: rgba(245, 158, 11, 0.6);
+  color: var(--color-accent);
+}
+html[data-deps-mode='1'] .deps-on {
+  display: inline;
 }
 
 /* ============================================================

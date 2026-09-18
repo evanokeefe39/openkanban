@@ -19,6 +19,9 @@
   </head>
   <body>
     <div class="app">
+      <!-- Icons: Lucide v1.47.0 (ISC), vendored as inline SVG. Four icons are not worth a 442 KB
+           runtime: this keeps the app a zero-build, offline-capable file set. Artwork unchanged;
+           sizing comes from .icon, colour from currentColor. -->
       <header class="topbar">
         <span class="brand">OPENKANBAN</span>
         <h1 class="board-name" id="board-name">&mdash;</h1>
@@ -28,9 +31,9 @@
           <span class="lamp-dot" aria-hidden="true"></span>
           <span id="storage-lamp-text">READY</span>
         </span>
-        <button class="btn" id="btn-export" type="button">EXPORT</button>
-        <button class="btn" id="btn-import" type="button">IMPORT</button>
-        <button class="btn" id="btn-settings" type="button">SETTINGS</button>
+        <button class="btn" id="btn-export" type="button"><svg class="icon lucide-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg>EXPORT</button>
+        <button class="btn" id="btn-import" type="button"><svg class="icon lucide-upload" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m17 8-5-5-5 5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg>IMPORT</button>
+        <button class="btn" id="btn-settings" type="button"><svg class="icon lucide-sliders-horizontal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 5H3"/><path d="M12 19H3"/><path d="M14 3v4"/><path d="M16 17v4"/><path d="M21 12h-9"/><path d="M21 19h-5"/><path d="M21 5h-7"/><path d="M8 10v4"/><path d="M8 12H3"/></svg>SETTINGS</button>
       </header>
 
       <section class="filters" aria-label="Filters">
@@ -54,6 +57,7 @@
             aria-controls="filter-panel"
             title="Show filter categories"
           >
+            <svg class="icon lucide-filter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 20a1 1 0 0 0 .553.895l2 1A1 1 0 0 0 14 21v-7a2 2 0 0 1 .517-1.341L21.74 4.67A1 1 0 0 0 21 3H3a1 1 0 0 0-.742 1.67l7.225 7.989A2 2 0 0 1 10 14z"/></svg>
             FILTERS
             <span class="filter-count" id="filter-count" hidden>0</span>
             <svg class="chev" viewBox="0 0 10 6" aria-hidden="true">
@@ -61,6 +65,14 @@
             </svg>
           </button>
           <span class="filter-spacer"></span>
+          <span
+            class="deps-indicator"
+            id="deps-indicator"
+            title="Hold the D key to show every dependency edge at once: amber cards are waiting on something, indigo cards hold something up, and each card lists the numbers it is wired to"
+          >
+            <span class="deps-keys">HOLD D — DEPENDENCIES</span>
+            <span class="deps-on">SHOWING DEPENDENCIES</span>
+          </span>
           <span
             class="prio-legend"
             id="prio-legend"

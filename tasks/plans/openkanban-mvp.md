@@ -70,6 +70,13 @@ labels all shipped, plus the dependency graph that no option mentioned.
   not lightness, carries the order.
 - **Depth**: borders-only, declared once. Hairlines at `rgba(255,255,255,.06–.14)`; no box-shadows
   except inset rings used as borders for chain highlighting.
+- **Interaction vocabulary**: icons are 13px Lucide line art (vendored inline, ISC) so a control is
+  recognisable before its label is read; the ticket number sits on the title line, small, muted and
+  tabular, where a card's identity belongs; the dependency overlay wears amber for "waiting on" and
+  indigo for "holding up" — the same two hues the hover chain already uses — and a card lists the
+  numbers it is wired to rather than restating titles. A hovered card rings in its own priority
+  colour whenever priority is on the board as colour, so the hover reads as *that card* rather than
+  as a generic mode.
 
 ## Behavioural Contracts
 
@@ -233,23 +240,28 @@ the header lamp reports storage write truth.
 | Browser verification | done | 7 pass/fail runs + 3 measurement passes, no console errors, no failed requests |
 | No new dependencies | done | Google Fonts is a CDN link; zero npm packages |
 
-Verification tally, stated exactly: 270 assertions across 14 runs (75 interaction, 17
-round-trip/recovery, 14 native-drag gate, 12 blocked-state recompute, 24 header/rename robustness,
-7 real-click gate, 14 colour-swatch removal, 30 palette + filter pane, 20 view options, 5 rail and
-tint geometry, 22 consolidated regression, 5 keyboard/scoping, and the earlier runs above).
-Nineteen failed on first pass and every one was traced to the test rather than the app — guessed
-counts and sets, an assertion truncated before the string it looked for, asserting a computed colour
-that `display:none` does not change, a "baseline" card that already carried the style under test,
-reading a colour through the `background` shorthand (which canvas cannot parse, so it silently
-yields black), querying the filter pane's groups before the pane is open, holding a chip node across
-the re-render that replaces it, expecting the due-today chip to have a transparent surface when the
-design gives every chip its own fill, dispatching a synthetic `Escape` on `document` when the
-handler is scoped to the pane, `display: inline-flex` blockifying to `flex` for a flex item, and
-three fixtures where the "blocked" card's blocker sat in a DONE column so the card was legitimately
-unblocked. Each was re-run in corrected form and passed. Every fixture-corrected re-run also derived its
-expected set from the store rather than from a hand-written literal. Three further passes yielded measurements rather than
-pass/fail series: computed contrast ratios, per-label filter exactness against the store, and
-layout geometry at 375px and 1440px.
+Verification tally — the runs, each counted once, summing to the total:
+75 interaction, 17 round-trip/recovery, 14 native-drag gate, 12 blocked-state recompute,
+24 header/rename robustness, 7 real-click gate, 14 colour-swatch removal, 30 palette + filter pane,
+20 view options, 5 rail and tint geometry, 22 consolidated regression, 5 keyboard and pane scoping,
+14 icons + popover (first pass), 21 icons + popover + numbers + hold-D (after the fixes),
+8 numbering/migration/edge semantics, 10 regression over the new features.
+**298 assertions across 16 runs.**
+
+Twenty-eight failed on first pass. Two were real product defects, both found by a test rather than
+by review, both fixed: the icon CDN executing nothing (defect 11) and a chip click dismissing the
+pane (defect 12). The other twenty-six were the test being wrong, and they are worth listing because
+each one is a repeatable way to lie to yourself about a UI: guessing a count or a set instead of
+deriving it from the store; asserting a computed colour that `display:none` does not change; reading
+a colour through the `background` shorthand, which canvas cannot parse and silently renders black;
+choosing a "baseline" card that already carried the style under test; comparing a shadow against a
+solid colour when the rule used an alpha; expecting `inline-flex` children to compute as `inline`
+rather than block; reading `textContent` when one of the two labels is hidden; querying the pane's
+children before the pane was open; holding a chip node across the re-render that replaces it;
+dispatching a synthetic key event on `document` when the handler is scoped to another element;
+testing a hover on a card a filter had hidden; a wrong column id; and three fixtures where the
+"blocked" card's blocker sat in a DONE column, so the card was legitimately unblocked.
+Every one was re-run in corrected form and passed.
 
 Export evidence, split honestly: the payload is test-verified twice over — captured from the app's
 own `URL.createObjectURL` call by a script injected into the page's world, and proven complete by a
@@ -306,6 +318,19 @@ there, which is correct; and at NORMAL density the five columns are 1548px wide,
 extends past a 1440px viewport — the board scrolls horizontally by design (measured page-level
 horizontal scroll: 0), which is the standard kanban affordance, and at COMPACT density all five fit.
 
+11. **The icon CDN loaded a script that never executed** — with `lucide` wired as a deferred CDN
+    script, `window.lucide` stayed undefined and four `<i data-lucide>` placeholders sat in the DOM;
+    the guard around `createIcons()` turned that into a silent no-op, which is exactly the failure
+    the no-silent-failure rule exists to prevent. A fetch from inside the page proved the network was
+    fine (HTTP 200, 442 KB), so the dependency was reachable but unverifiable. Fixed by deleting the
+    runtime entirely and vendoring the four icons as inline SVG (Lucide v1.47.0, ISC): four icons do
+    not justify 442 KB, and the app keeps its zero-build, offline, `file://`-capable property.
+12. **Clicking a filter chip dismissed the pane** — the outside-click dismissal compared
+    `event.target.closest('#filter-panel')` in the bubble phase, but the chip's own handler had
+    already re-rendered the pane, so the target was detached and the guard failed. Fixed by moving
+    that check to the capture phase, where the node is still attached. Found by a test that clicked a
+    chip and asserted the pane stayed open, not by reading the diff.
+
 Claims that did not survive checking: a visual audit asserted the columns had different widths and
 that DONE was narrower; measurement shows five × 268px and zero card/chip overflow. The same audit's
 "low-contrast" complaint was right, but for a different reason than stated (item 1).
@@ -355,6 +380,28 @@ that DONE was narrower; measurement shows five × 268px and zero card/chip overf
     board document, so importing someone else's board does not rewrite how you look at it. Density
     flows through `--density-*` tokens rather than duplicated rules. Hiding blocker badges is
     explicitly display-only, and the pane says so — the gate still refuses and warns regardless.
+15. **Card numbers are handles, not positions** (user-asked). A number is assigned once, at
+    creation, from a monotonic `nextNumber` on the document, and is never reused or renumbered — so
+    "card 7 is blocked" stays true after 7 moves column. A board saved before numbers existed is
+    repaired in creation order (oldest first, ties in insertion order) with an announced repair
+    rather than being quarantined, and importing someone else's numbers is honoured because they are
+    how that board is discussed. Numbers are shown by default and can be hidden in VIEW OPTIONS.
+16. **Dependencies are revealed by holding D** (user-asked). The overlay is derived on every pass
+    (nothing is stored), wears the same two hues the hover chain already uses — amber where a card
+    waits, indigo where something waits on it — and each card lists the numbers it is wired to.
+    An edge whose blocker is finished still draws its arrow but earns no waiting ring, because the
+    arrow is the wiring and the ring is the constraint. The key is ignored while typing, while a
+    dialog is open, and with modifiers held; a window blur releases it so alt-tabbing cannot strand
+    the overlay.
+17. **The filter pane is a popover, not a drawer** (user-directed): it floats over the board on an
+    opaque elevated surface with a stronger border (the design forbids shadows, so depth is carried
+    by surface and border), and dismisses on an outside click or Escape from anywhere. Escape is
+    suppressed while a dialog is open, which owns its own. Icons are vendored inline SVG rather than
+    loaded from a runtime (defect 11).
+18. **Hover rings take the card's own priority colour** when priority is on the board as colour
+    (rails showing, or the full-card tint enabled), instead of the neutral cream used for a card
+    with no priority. The chain's up/down rings keep amber and indigo: they encode direction, which
+    a priority colour cannot.
 
 ## Reasoning trace
 

@@ -9,8 +9,9 @@
  * {
  *   version: 1,
  *   name: string,
+ *   nextNumber: number,          // monotonic; a number is issued once and never reused
  *   columns: [{ id, name, gate: boolean, done: boolean, cardIds: string[] }],
- *   cards: { [id]: { id, title, notes, priority: 0..3, due: 'YYYY-MM-DD'|'',
+ *   cards: { [id]: { id, number, title, notes, priority: 0..3, due: 'YYYY-MM-DD'|'',
  *                    labels: string[], blockedBy: string[], createdAt, updatedAt } }
  * }
  *
@@ -55,6 +56,7 @@
   const VIEW_KEY = 'openkanban.view.v1';
   const DEFAULT_VIEW = {
     density: 'compact',
+    showNumbers: true,
     showPriority: true,
     showLabels: true,
     showDue: true,
@@ -62,6 +64,11 @@
     highlightPriority: false,
   };
   const VIEW_TOGGLES = [
+    {
+      key: 'showNumbers',
+      label: 'CARD NUMBERS',
+      title: 'The ticket number on each card, assigned once in creation order and never reused',
+    },
     {
       key: 'showPriority',
       label: 'PRIORITY RAIL + TAGS',
@@ -184,6 +191,7 @@
     activeCardId: null,
     inlineAdd: null,
     chainId: null,
+    depsHeld: false,
   };
 
   // ==========================================================================
@@ -239,6 +247,7 @@
       const createdAt = typeof value.createdAt === 'string' ? value.createdAt : new Date().toISOString();
       cards[id] = {
         id,
+        number: Number.isInteger(value.number) && value.number > 0 ? value.number : 0,
         title,
         notes: typeof value.notes === 'string' ? value.notes : '',
         priority: prio,
@@ -249,6 +258,19 @@
         updatedAt: typeof value.updatedAt === 'string' ? value.updatedAt : createdAt,
       };
     }
+
+    // A number is a handle: it is assigned once, in creation order, and never reused or renumbered —
+    // a card that moves between columns keeps the number people refer to it by.
+    let top = 0;
+    for (const card of Object.values(cards)) top = Math.max(top, card.number);
+    const unnumbered = Object.values(cards).filter((card) => !card.number);
+    if (unnumbered.length) {
+      unnumbered.sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
+      for (const card of unnumbered) card.number = ++top;
+      repairs.push(`numbered ${unnumbered.length} card(s) that had none`);
+    }
+    const declaredNext = Number(raw.nextNumber);
+    const nextNumber = Math.max(Number.isInteger(declaredNext) && declaredNext > 0 ? declaredNext : 1, top + 1);
 
     const columns = [];
     const placed = new Set();
@@ -309,7 +331,7 @@
     const name =
       typeof raw.name === 'string' && raw.name.trim() ? titleCaseLabel(raw.name.trim()) : 'MAIN BOARD';
 
-    return { ok: true, board: { version: SCHEMA_VERSION, name, columns, cards }, repairs };
+    return { ok: true, board: { version: SCHEMA_VERSION, name, columns, cards, nextNumber }, repairs };
   }
 
   function readStored() {
@@ -553,6 +575,7 @@
     commit(() => {
       board.cards[id] = {
         id,
+        number: board.nextNumber,
         title,
         notes: '',
         priority: 0,
@@ -562,6 +585,7 @@
         createdAt: now,
         updatedAt: now,
       };
+      board.nextNumber += 1;
       column.cardIds.push(id);
     });
     return id;
@@ -1155,6 +1179,7 @@
   function applyChainHighlight() {
     const up = ui.chainId ? blockedChain(ui.chainId) : null;
     const down = ui.chainId ? closure(ui.chainId, 'down') : null;
+    document.documentElement.dataset.depsMode = ui.depsHeld ? '1' : '0';
     for (const node of document.querySelectorAll('#board .card')) {
       const id = node.dataset.cardId;
       let relation = null;
@@ -1163,6 +1188,19 @@
       else if (down && down.has(id)) relation = 'down';
       if (relation) node.dataset.chain = relation;
       else node.removeAttribute('data-chain');
+
+      // Hold-D overlay: amber where a card is waiting, indigo where something waits on it.
+      // Derived from the graph on each pass, so releasing D leaves nothing behind to clean up.
+      let deps = null;
+      if (ui.depsHeld) {
+        const waits = unfinishedBlockers(id).length > 0;
+        const holds = dependentsOf(id).length > 0;
+        if (waits && holds) deps = 'both';
+        else if (waits) deps = 'waits';
+        else if (holds) deps = 'holds';
+      }
+      if (deps) node.dataset.deps = deps;
+      else node.removeAttribute('data-deps');
     }
   }
 
@@ -1185,16 +1223,19 @@
     main.dataset.cardId = target.id;
     main.setAttribute(
       'aria-label',
-      `${target.title} — ${column ? column.name : 'unplaced'}${blocked ? ', blocked' : ''}${
+      `#${target.number} ${target.title} — ${column ? column.name : 'unplaced'}${blocked ? ', blocked' : ''}${
         prio.value ? `, priority ${prio.label}` : ''
       }`
     );
+    const number = el('span', 'card-num', `#${target.number}`);
+    number.title = `Card #${target.number}`;
+    main.appendChild(number);
     main.appendChild(el('span', 'card-title', target.title));
 
     const meta = el('span', 'card-meta');
     if (blocked) {
       const chip = el('span', 'chip blocked', `BLOCKED ×${blockedBy.length}`);
-      chip.title = `Waiting on: ${blockedBy.map((b) => b.title).join(', ')}`;
+      chip.title = `Waiting on: ${blockedBy.map((b) => `#${b.number} ${b.title}`).join(', ')}`;
       meta.appendChild(chip);
     }
     if (blocked && column && column.gate) {
@@ -1226,7 +1267,7 @@
     }
     if (dependents.length) {
       const chip = el('span', 'chip blocks', `BLOCKS ${dependents.length}`);
-      chip.title = `Blocks: ${dependents.map((d) => d.title).join(', ')}`;
+      chip.title = `Blocks: ${dependents.map((d) => `#${d.number} ${d.title}`).join(', ')}`;
       meta.appendChild(chip);
     }
     if (target.notes.trim()) {
@@ -1236,6 +1277,23 @@
     }
     for (const label of target.labels) meta.appendChild(el('span', 'chip label', label));
     main.appendChild(meta);
+
+    // The wiring, in numbers: shown only while D is held, so the resting card stays quiet.
+    const allBlockers = blockersOf(target.id);
+    if (allBlockers.length || dependents.length) {
+      const refs = el('span', 'card-refs');
+      if (allBlockers.length) {
+        const up = el('span', 'ref-up', `←${allBlockers.map((b) => ` #${b.number}`).join('')}`);
+        up.title = `Blocked by ${allBlockers.map((b) => `#${b.number} ${b.title}`).join(', ')}`;
+        refs.appendChild(up);
+      }
+      if (dependents.length) {
+        const down = el('span', 'ref-down', `→${dependents.map((d) => ` #${d.number}`).join('')}`);
+        down.title = `Holds up ${dependents.map((d) => `#${d.number} ${d.title}`).join(', ')}`;
+        refs.appendChild(down);
+      }
+      main.appendChild(refs);
+    }
 
     wrapper.appendChild(main);
     return wrapper;
@@ -1260,7 +1318,7 @@
       return;
     }
     const column = columnOf(target.id);
-    $('card-kicker').textContent = `CARD / ${column ? column.name : 'UNPLACED'}`;
+    $('card-kicker').textContent = `CARD #${target.number} / ${column ? column.name : 'UNPLACED'}`;
 
     const titleInput = $('card-title');
     if (document.activeElement !== titleInput) titleInput.value = target.title;
@@ -1317,7 +1375,7 @@
     for (const blocker of blockers) {
       const blockerColumn = columnOf(blocker.id);
       const done = isDoneColumn(blockerColumn);
-      const chip = el('button', 'chip', `${blocker.title} — ${done ? 'DONE' : blockerColumn ? blockerColumn.name : 'UNPLACED'} ×`);
+      const chip = el('button', 'chip', `#${blocker.number} ${blocker.title} — ${done ? 'DONE' : blockerColumn ? blockerColumn.name : 'UNPLACED'} ×`);
       chip.type = 'button';
       chip.dataset.removeBlocker = blocker.id;
       chip.title = done ? 'Completed blocker — remove the link' : 'Unfinished blocker — remove the link';
@@ -1332,7 +1390,7 @@
     for (const dependent of dependents) {
       const dependentColumn = columnOf(dependent.id);
       blocksHost.appendChild(
-        el('span', 'chip', `${dependent.title} — ${dependentColumn ? dependentColumn.name : 'UNPLACED'}`)
+        el('span', 'chip', `#${dependent.number} ${dependent.title} — ${dependentColumn ? dependentColumn.name : 'UNPLACED'}`)
       );
     }
 
@@ -1802,6 +1860,28 @@
       else if (act === 'done') toggleColumnFlag(columnId, 'done', input.checked);
     });
 
+    // Hold D: reveal the wiring. Key repeat, typing targets and open dialogs are all ignored,
+    // and a window blur releases the key so alt-tabbing mid-hold cannot strand the overlay.
+    const releaseDeps = () => {
+      if (!ui.depsHeld) return;
+      ui.depsHeld = false;
+      applyChainHighlight();
+    };
+    document.addEventListener('keydown', (event) => {
+      if (event.key !== 'd' && event.key !== 'D') return;
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      const target = event.target;
+      if (target && target.closest && target.closest('input, textarea, select, [contenteditable="true"]')) return;
+      if (document.querySelector('dialog[open]')) return;
+      if (ui.depsHeld) return;
+      ui.depsHeld = true;
+      applyChainHighlight();
+    });
+    document.addEventListener('keyup', (event) => {
+      if (event.key === 'd' || event.key === 'D') releaseDeps();
+    });
+    window.addEventListener('blur', releaseDeps);
+
     // filters
     $('filter-query').addEventListener('input', (event) => {
       ui.query = event.target.value;
@@ -1830,9 +1910,23 @@
         renderBoard();
       }
     });
-    $('filter-panel').addEventListener('keydown', (event) => {
-      if (event.key !== 'Escape') return;
-      event.preventDefault();
+    // Popover dismissal: click anywhere outside, or press Escape from anywhere. Both are
+    // suppressed while a dialog is open, which owns its own Escape handling. The outside-click
+    // check runs in the capture phase, because a click on a chip re-renders the pane and detaches
+    // the very node the bubble-phase check would inspect.
+    document.addEventListener(
+      'click',
+      (event) => {
+        if (!ui.filterOpen) return;
+        if (event.target.closest && event.target.closest('#filter-panel, #filter-toggle')) return;
+        ui.filterOpen = false;
+        renderFilters();
+      },
+      true
+    );
+    document.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape' || !ui.filterOpen) return;
+      if (document.querySelector('dialog[open]')) return;
       ui.filterOpen = false;
       renderFilters();
       $('filter-toggle').focus();
@@ -2023,7 +2117,9 @@
       ...extra,
     });
     const cards = {};
+    let nextNumber = 1;
     const add = (cardDef) => {
+      cardDef.number = nextNumber++;
       cards[cardDef.id] = cardDef;
     };
     add(make('c-shell', 'Design tokens + app shell', { priority: 2, labels: ['UI'], notes: 'UNIT-02 palette lifted from ambient-noise-app-v2.\nZero radius, hard 1px rules, no shadows.' }));
@@ -2049,6 +2145,7 @@
         { ...DEFAULT_COLUMNS[4], cardIds: ['c-shell'] },
       ],
       cards,
+      nextNumber,
     };
   }
 
