@@ -93,7 +93,10 @@ labels all shipped, plus the dependency graph that no option mentioned.
   indigo for "holding up" — the same two hues the hover chain already uses — and a card lists the
   numbers it is wired to rather than restating titles. A hovered card rings in its own priority
   colour whenever priority is on the board as colour, so the hover reads as *that card* rather than
-  as a generic mode.
+  as a generic mode. **Two colour systems never share a surface without a dark step between them**:
+  every dependency ring carries a dark line inside it and the arrow row sits on its own dark strip,
+  because priority fills and dependency hues both want the card's edge and the pale tints win that
+  fight without a separator (measured: indigo at 1.28:1 on a P2 tint, versus 4.5:1 or better with it).
 
 ## Behavioural Contracts
 
@@ -263,8 +266,9 @@ Verification tally — the runs, each counted once, summing to the total:
 20 view options, 5 rail and tint geometry, 22 consolidated regression, 5 keyboard and pane scoping,
 14 icons + popover (first pass), 21 icons + popover + numbers + hold-D (after the fixes),
 8 numbering/migration/edge semantics, 10 regression over the new features, 4 hover-ring semantics,
-7 regression over the card surface change, 7 column-header checks, 9 ink-surface checks.
-**325 assertions across 21 runs.**
+7 regression over the card surface change, 7 column-header checks, 9 ink-surface checks,
+6 ring-separator checks, 6 overlay-contrast checks.
+**337 assertions across 23 runs.**
 
 Thirty-one failed on first pass. Two were real product defects, both found by a test rather than
 by review, both fixed: the icon CDN executing nothing (defect 11) and a chip click dismissing the
@@ -370,6 +374,16 @@ horizontal scroll: 0), which is the standard kanban affordance, and at COMPACT d
     element. The neutral ring is now the foreground grey, cream means P2 and nothing else, and the
     ivory stays reserved for the single primary action in a dialog. Verified: P0 rings pink, P2 rings
     cream, an unprioritised card rings grey — three distinct values.
+15. **HIGHLIGHT BY PRIORITY erased the dependency overlay** (user-reported). Measured before any
+    change: a 1px indigo ring at 70% alpha reads 1.28:1 against the palest P2 tint and 2.56:1 even
+    against a plain card, and the amber ring 2.26:1 on the same tint — both under the 3:1 bar for
+    non-text graphics, i.e. the wiring was effectively invisible exactly when the fills were loudest.
+    The arrow text was worse: indigo refs measured 1.91:1. Fixed by giving colour a dark step to sit
+    against rather than a louder hue — a 1px separator inside every ring, a 2px separator plus a
+    heavier 2px ring for the held overlay, a dark strip behind the arrow row, and a lighter indigo.
+    After: rings 4.5:1 or better on all four surfaces (plain, P0, P1, P2), arrow text 5.71:1 or
+    better, and ring rendering identical whether the fills are tinted or not — which is the property
+    that matters, since it means the tint can never degrade the overlay again.
 
 Claims that did not survive checking: a visual audit asserted the columns had different widths and
 that DONE was narrower; measurement shows five × 268px and zero card/chip overflow. The same audit's
@@ -459,6 +473,13 @@ that DONE was narrower; measurement shows five × 268px and zero card/chip overf
     Anything whose 9-10px text sits on a darkened surface gets its contrast re-measured, not assumed:
     the filter group names moved from muted to secondary (3.8:1 → 7.3:1) for exactly the reason the
     card number did (4.3:1 → 6.9:1).
+21. **Where two colour systems overlap, separate them with a dark step rather than a louder hue**
+    (from the user's report that highlight-by-priority hid the dependency overlay). Turning the tint
+    up would have fought the fills harder; the fix that works is a black line between the colour and
+    whatever it sits on. That principle now covers four places — the chain rings, the overlay rings,
+    the arrow strip and, earlier, the priority rail's relationship to the card surface — and the
+    reason is measured rather than aesthetic: contrast for a coloured ring is set by what is
+    immediately behind it, not by the fill underneath the whole card.
 
 ## Reasoning trace
 
