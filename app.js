@@ -194,6 +194,11 @@
     dragId: null,
     activeCardId: null,
     inlineAdd: null,
+    // cards picked for a bulk operation, keyed by id so it survives re-renders. Populated only
+    // while ctrl/meta is held: the modifier is what makes a card click a selection rather than an
+    // open, so the set cannot be entered by accident.
+    selection: new Set(),
+    ctrlHeld: false,
     chainId: null,
     depsHeld: false,
   };
@@ -1242,6 +1247,94 @@
     }
   }
 
+  /**
+   * Mark the picked cards. Selection is a gesture on top of the board, so it is patched onto the
+   * existing nodes the same way the dependency canes are — a full re-render would drop the
+   * pointer's column scroll and lose the pick the user just made.
+   */
+  function applySelection() {
+    document.documentElement.dataset.selectMode = ui.ctrlHeld ? '1' : '0';
+    for (const node of document.querySelectorAll('#board .card')) {
+      if (ui.selection.has(node.dataset.cardId)) node.dataset.picked = '1';
+      else node.removeAttribute('data-picked');
+    }
+    const bar = $('selection-bar');
+    if (!bar) return;
+    const count = ui.selection.size;
+    bar.hidden = !count;
+    if (!count) return;
+    $('selection-count').textContent = `${count} SELECTED`;
+    // the targets are the columns themselves, so a bulk move reads as "these cards, into there"
+    const targets = $('selection-targets');
+    targets.textContent = '';
+    for (const column of board.columns) {
+      const button = el('button', 'btn btn-small', column.name);
+      button.type = 'button';
+      button.dataset.moveSelectionTo = column.id;
+      targets.appendChild(button);
+    }
+  }
+
+  /**
+   * Move every picked card into a column, in board order. One commit for the whole move, so the
+   * board is written once and a bulk drag cannot half-apply.
+   *
+   * The gate applies to a bulk move exactly as it does to a single one — `attemptMove` is the only
+   * funnel that enforces it, so the blocked members are collected and confirmed ONCE for the batch
+   * (per-card dialogs for a twenty-card drag would be useless), then the move runs. A card that is
+   * not blocked never prompts.
+   */
+  function moveSelectionTo(columnId) {
+    if (!ui.selection.size) return;
+    const to = getColumn(columnId);
+    if (!to) return;
+    const ids = [...ui.selection].filter((id) => card(id));
+    if (!ids.length) return;
+
+    const apply = (list) => {
+      commit(() => {
+        // applyMove is the single place that removes a card from its old column, orders it in the
+        // new one, and stamps updatedAt — a bulk move reuses it rather than repeating that
+        for (const id of list) applyMove(id, columnId);
+        ui.selection.clear();
+      });
+      applySelection();
+      toast('info', `MOVED ${list.length} CARD${list.length === 1 ? '' : 'S'} TO ${to.name}`);
+    };
+
+    const blocked = to.gate ? ids.filter((id) => unfinishedBlockers(id).length) : [];
+    if (!blocked.length) {
+      apply(ids);
+      return;
+    }
+
+    const body = el('div');
+    body.appendChild(
+      el(
+        'p',
+        null,
+        `${blocked.length} of the ${ids.length} selected card${ids.length === 1 ? '' : 's'} ${
+          blocked.length === 1 ? 'is' : 'are'
+        } blocked:`
+      )
+    );
+    const list = el('ul');
+    for (const id of blocked) list.appendChild(el('li', null, card(id).title));
+    body.appendChild(list);
+    body.appendChild(
+      el('p', null, `Moving them into "${to.name}" records an override; each card stays flagged.`)
+    );
+    askConfirm({
+      title: 'BLOCKED CARDS → GATED COLUMN',
+      body,
+      okLabel: 'MOVE ANYWAY',
+      onOk: () => {
+        apply(ids);
+        toast('warn', `OVERRIDE — ${blocked.length} BLOCKED CARD${blocked.length === 1 ? '' : 'S'} IN "${to.name}"`);
+      },
+    });
+  }
+
   function buildCard(target) {
     const blockedBy = unfinishedBlockers(target.id);
     const blocked = blockedBy.length > 0;
@@ -1979,6 +2072,10 @@
       openResetDialog();
     });
     $('empty-sample').addEventListener('click', () => loadSampleBoard());
+    $('selection-targets').addEventListener('click', (event) => {
+      const button = event.target.closest('[data-move-selection-to]');
+      if (button) moveSelectionTo(button.dataset.moveSelectionTo);
+    });
     $('settings-close').addEventListener('click', () => $('settings-dialog').close());
     $('settings-dialog').addEventListener('close', () => flushSettingsFields());
     bindBackdropClose('settings-dialog');
@@ -2041,10 +2138,47 @@
       ui.depsHeld = true;
       applyChainHighlight();
     });
+    /**
+     * Ctrl/Cmd held = pick cards instead of opening them. Releasing it clears the picks: the
+     * selection is a gesture, not a stored mode, so nothing is left armed after the keys are let
+     * go and a stray card cannot be dragged as part of a group the user has forgotten about.
+     */
+    const releaseCtrl = () => {
+      if (!ui.ctrlHeld) return;
+      ui.ctrlHeld = false;
+      ui.selection.clear();
+      applySelection();
+    };
     document.addEventListener('keyup', (event) => {
       if (event.key === 'd' || event.key === 'D') releaseDeps();
+      if (event.key === 'Control' || event.key === 'Meta') releaseCtrl();
     });
-    window.addEventListener('blur', releaseDeps);
+    window.addEventListener('blur', () => {
+      releaseDeps();
+      releaseCtrl();
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Control' || event.key === 'Meta') {
+        if (ui.ctrlHeld) return;
+        ui.ctrlHeld = true;
+        applySelection();
+        return;
+      }
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      const target = event.target;
+      if (target && target.closest && target.closest('input, textarea, select, [contenteditable="true"]')) return;
+      if (document.querySelector('dialog[open]')) return;
+      // C puts a new card in the first column, which is where unfiled work belongs — the same
+      // thing the column's own "+ ADD CARD" plate does, without the trip to the mouse
+      if (event.key === 'c' || event.key === 'C') {
+        const first = board.columns[0];
+        if (!first) return;
+        event.preventDefault();
+        ui.inlineAdd = { columnId: first.id, value: '' };
+        render();
+      }
+    });
 
     // filters
     $('filter-query').addEventListener('input', (event) => {
@@ -2106,7 +2240,18 @@
         return;
       }
       const main = event.target.closest('.card-main');
-      if (main) openCard(main.dataset.cardId);
+      if (!main) return;
+      // ctrl/meta turns the click into a pick rather than an open: the same click cannot mean both,
+      // and picking is the rarer intent so it takes the modifier
+      if (ui.ctrlHeld || event.ctrlKey || event.metaKey) {
+        event.preventDefault();
+        const id = main.dataset.cardId;
+        if (ui.selection.has(id)) ui.selection.delete(id);
+        else ui.selection.add(id);
+        applySelection();
+        return;
+      }
+      openCard(main.dataset.cardId);
     });
     host.addEventListener('mouseover', (event) => {
       const cardEl = event.target.closest('.card');

@@ -12,7 +12,10 @@
   --color-foreground: #e8e8ed;
   --color-foreground-secondary: #9ca3af;
   --color-foreground-muted: #6b7280;
-  --color-border-focus: #6366f1;
+  /* Focus reads as the app's own accent (amber), not the indigo it started as: navy was swept out
+     of the whole surface system, and a blue focus ring was the last place it survived. Kept as its
+     own token rather than aliased to --color-accent so the two can diverge again if needed. */
+  --color-border-focus: #f59e0b;
   --color-vu-green: #22c55e;
   --color-destructive: #ef4444;
   --color-accent: #f59e0b;
@@ -606,7 +609,7 @@ html[data-board-empty="1"] .row-message {
 .input:focus {
   outline: none;
   border-color: var(--color-border-focus);
-  box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.4);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--color-border-focus) 40%, transparent);
 }
 textarea.input {
   resize: vertical;
@@ -818,7 +821,9 @@ button.chip[aria-pressed='true']:hover {
   transition: background-color 120ms var(--ease-out);
 }
 .col-body.drag-over {
-  background: rgba(99, 102, 241, 0.08);
+  /* the drop target reads as ink — the same fill the floating chrome uses — rather than the indigo
+     wash that predated the navy sweep and was the last blue left in the sheet */
+  background: var(--ink-bg);
 }
 
 .plate {
@@ -1025,6 +1030,66 @@ html[data-deps-mode='1'] .card[data-chain] .card-refs {
 }
 .card[data-chain='blocked'] .card-cane {
   display: none;
+}
+
+/* A row in the key cluster: same shape as the dependency hint, so the right end of the row reads
+   as one reference block rather than several unrelated items. */
+.row-key {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--color-foreground-secondary);
+  white-space: nowrap;
+}
+/* while Ctrl is down the hint is the active mode, so it lights the way the deps hint does */
+html[data-select-mode='1'] #select-hint {
+  color: var(--color-accent);
+}
+
+/* Bulk operations. Sits above the board and only while cards are picked, so it costs no space the
+   rest of the time and cannot be confused with a permanent toolbar. */
+.selection-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: var(--color-background);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-foreground-secondary);
+  overflow-x: auto;
+}
+.selection-bar[hidden] {
+  display: none;
+}
+.selection-count {
+  color: var(--ivory);
+  white-space: nowrap;
+}
+.selection-hint {
+  color: var(--color-foreground-muted);
+}
+.selection-targets {
+  display: flex;
+  gap: 6px;
+}
+/* a picked card: the fill lifts and the border goes ivory, which is neither the hover lift nor a
+   dependency cane, so a selection cannot be mistaken for either */
+.card[data-picked='1'] {
+  background: var(--card-bg-hover);
+  border-color: var(--ivory);
+}
+/* in select mode the whole card is a pick target, so the pointer says so */
+html[data-select-mode='1'] .card-main {
+  cursor: crosshair;
+}
+.btn-small {
+  padding: 2px 6px;
+  font-size: 10px;
 }
 
 /* the hint doubles as the mode indicator: the label the key is named after */

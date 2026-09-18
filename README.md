@@ -106,6 +106,26 @@ If the pinned browser download is unavailable (it can be, behind a proxy), any i
 
 Any static host works, because there is nothing to build. On Vercel: import the repository, leave the framework preset as **Other**, leave the build command empty, and let it serve the repository root. [`vercel.json`](vercel.json) adds the two things worth adding — `Cache-Control: max-age=0, must-revalidate` so a deploy takes effect on the next load instead of leaving someone on last week's markup, and `nosniff` / `no-referrer` / `DENY` frame headers.
 
+## Roadmap
+
+Post-MVP, in rough order of preference — none of it started.
+
+**Multiple boards.** Still localStorage, no accounts: a board picker, each board its own key, and a
+way to move one between machines (export/import already exists, so this is mostly a switcher and a
+key scheme). Hosting on Vercel already gives each visitor their own boards for free, since the state
+is local — so a shared URL is a shared *app*, not a shared board, which is the useful property for
+the near-term.
+
+**An `npx` package with a local server and CLI.** The same client, served by a local process, with a
+CLI and an MCP server so an agent can read and write the board. That turns the board into something
+an agent can *use* — marking work in progress, recording blockers, reporting status — rather than
+something it only renders. The local server is what makes it trustworthy: the data stays on the
+machine, and the agent talks to a real API instead of a browser's storage.
+
+**A dependency-graph view.** Hold-D reads one card's chain at a time; a separate view could lay the
+whole graph out at once. Deliberately deferred: it is a second rendering of the same model, and the
+model is not stable enough to draw yet.
+
 ## Design notes
 
 The look is lifted from a sibling project's design language: a dark instrument panel, JetBrains Mono throughout, 1px rules as the only source of separation, and zero border radius.

@@ -477,7 +477,91 @@ async function run() {
     await page.click("#settings-close");
     await page.waitForFunction(() => document.getElementById("settings-dialog").open === false);
 
-    // 12 — nothing threw along the way
+    // 12 — the two hotkeys: C adds to the first column, Ctrl picks cards for a bulk move
+    await freshBoard(page, server.base);
+    await page.keyboard.press("c");
+    await page.waitForFunction(() => !!document.querySelector("#board .add-form"));
+    const addForm = await page.evaluate(() => {
+      const form = document.querySelector("#board .add-form");
+      return { column: form.closest(".column").dataset.columnId, focused: document.activeElement.tagName };
+    });
+    check(
+      "C opens a new card in the first column with the caret in it",
+      addForm.column === "col-backlog" && addForm.focused === "TEXTAREA",
+      JSON.stringify(addForm)
+    );
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => !document.querySelector("#board .add-form"));
+
+    await page.keyboard.down("Control");
+    await page.waitForFunction(() => document.documentElement.dataset.selectMode === "1");
+    const pickCard = async (id) => {
+      const box = await page.evaluate((cardId) => {
+        const node = document.querySelector(`.card[data-card-id="${cardId}"]`);
+        const rect = node.getBoundingClientRect();
+        return { x: rect.x + 20, y: rect.y + 10 };
+      }, id);
+      await page.mouse.click(box.x, box.y);
+    };
+    await pickCard("c-store");
+    await pickCard("c-graph");
+    await page.waitForFunction(() => document.getElementById("selection-bar").hidden === false);
+    const picked = await page.evaluate(() => ({
+      picked: [...document.querySelectorAll("#board .card[data-picked]")].map((c) => c.dataset.cardId),
+      count: document.getElementById("selection-count").textContent,
+      targets: [...document.querySelectorAll("#selection-targets button")].map((b) => b.textContent),
+    }));
+    check(
+      "holding Ctrl picks cards and offers a bulk move to every column",
+      picked.picked.length === 2 && /2 SELECTED/.test(picked.count) && picked.targets.length === 5,
+      JSON.stringify(picked)
+    );
+
+    // c-store is blocked by c-shell and c-graph is not, so exactly one of the two prompts: the
+    // clause asserts the shape (a count out of the selected total) rather than the number, which
+    // depends on the seed
+    await page.click('#selection-targets button[data-move-selection-to="col-progress"]');
+    await page.waitForFunction(() => document.getElementById("confirm-dialog").open === true);
+    const gateTitle = await page.textContent("#confirm-title");
+    const gateBody = await page.textContent("#confirm-text");
+    check(
+      "a bulk move of blocked cards into a gated column asks once, naming the count",
+      gateTitle === "BLOCKED CARDS → GATED COLUMN" &&
+        /\d+ of the \d+ selected cards? (is|are) blocked/.test(gateBody),
+      JSON.stringify({ gateTitle, gateBody: gateBody.slice(0, 90) })
+    );
+
+    await page.click("#confirm-ok");
+    await page.waitForFunction(() => document.getElementById("confirm-dialog").open === false);
+    const bulk = await page.evaluate(() => {
+      const read = (id) => {
+        const node = document.querySelector(`.card[data-card-id="${id}"]`);
+        return {
+          column: node.closest(".column").dataset.columnId,
+          override: [...node.querySelectorAll(".chip")].some((c) => /OVERRIDE/.test(c.textContent)),
+        };
+      };
+      return { store: read("c-store"), graph: read("c-graph") };
+    });
+    check(
+      "confirming the bulk move relocates every picked card and records the overrides",
+      bulk.store.column === "col-progress" && bulk.graph.column === "col-progress" && bulk.store.override,
+      JSON.stringify(bulk)
+    );
+
+    await page.keyboard.up("Control");
+    await page.waitForFunction(() => document.documentElement.dataset.selectMode === "0");
+    const released = await page.evaluate(() => ({
+      picked: document.querySelectorAll("#board .card[data-picked]").length,
+      barHidden: document.getElementById("selection-bar").hidden,
+    }));
+    check(
+      "releasing Ctrl clears the picks and hides the bulk bar",
+      released.picked === 0 && released.barHidden === true,
+      JSON.stringify(released)
+    );
+
+    // 13 — nothing threw along the way
     check("the page logged no errors", pageErrors.length === 0, pageErrors.join(" | "));
   } catch (error) {
     check("suite ran to completion", false, error && error.stack ? error.stack.split("\n").slice(0, 4).join(" | ") : error);

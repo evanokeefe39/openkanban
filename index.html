@@ -81,15 +81,24 @@
           <span
             class="deps-indicator"
             id="deps-indicator"
-            title="Hold the D key, then hover a card, to see what it is waiting on and what is waiting on it"
+            title="Hold the D key, then hover a card, to see its dependencies: a red candy cane on the cards it blocks, a white line on the cards that block it"
           >
             <span class="deps-keys"><kbd class="kbd">D</kbd> HOVER FOR DEPENDENCIES</span>
             <span class="deps-on">SHOWING DEPENDENCIES</span>
           </span>
+          <span class="row-key" title="Put a new card at the top of the first column">
+            <kbd class="kbd">C</kbd> NEW CARD
+          </span>
+          <span
+            class="row-key"
+            id="select-hint"
+            title="Hold Ctrl (or Cmd) and click cards to pick several, then move them together"
+          >
+            <kbd class="kbd">CTRL</kbd> SELECT CARDS
+          </span>
         </span>
         <span class="row-gutter"></span>
-        <span
-          class="prio-legend"
+        <span class="prio-legend"
           id="prio-legend"
           title="Card priority — the bar on the top edge of a card"
         >
@@ -104,6 +113,14 @@
       <!-- The filter popover is positioned from its trigger's rect and sits outside the topbar:
            the bar scrolls horizontally when it is crowded, and a scrolling ancestor would clip it. -->
       <div class="filter-panel" id="filter-panel" hidden></div>
+
+      <!-- Bulk operations, shown only while cards are picked with Ctrl held: the modifier is the
+           mode, so there is nothing to toggle off and nothing left armed when it is released. -->
+      <div class="selection-bar" id="selection-bar" hidden>
+        <span class="selection-count" id="selection-count"></span>
+        <span class="selection-hint">MOVE TO</span>
+        <span class="selection-targets" id="selection-targets"></span>
+      </div>
 
       <main class="board" id="board" aria-label="Kanban board"></main>
     </div>
