@@ -7,12 +7,17 @@ import fColumns from "./f-columns.mjs";
 import gFilterView from "./g-filter-view.mjs";
 import hIoReset from "./h-io-reset.mjs";
 import iDesign from "./i-design.mjs";
+import iColour from "./i-colour.mjs";
 
 /**
  * The per-target suite, in run order.
  *
  * Order is narrative rather than load-bearing — every check sets up its own
  * state — but a failure is easier to read when the boot checks come first.
+ *
+ * `i-design` and `i-colour` are two files rather than one because the design
+ * invariants split cleanly in two: structure and geometry, and colour measured
+ * against the floor.
  */
 export const SUITES = [
   aBoot,
@@ -24,6 +29,7 @@ export const SUITES = [
   gFilterView,
   hIoReset,
   iDesign,
+  iColour,
 ];
 
 /** Every check in the suite, flattened, for the ledger and for `--only`. */

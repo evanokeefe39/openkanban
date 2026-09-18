@@ -113,7 +113,14 @@ npm run behaviour:react    # progress on the port — report only until it is gr
 npm run compare            # diff the two reports: green here, red there, is the regression
 ```
 
-If the pinned browser download is unavailable (it can be, behind a proxy), any installed Chromium-family browser will do: `OK_BROWSER_CHANNEL=msedge npm test`.
+If the pinned browser download is unavailable (it can be, behind a proxy), any installed Chromium-family browser will do — the behaviour suite launches the same browser, so the override applies to both:
+
+```bash
+OK_BROWSER_CHANNEL=msedge npm test
+OK_BROWSER_CHANNEL=msedge npm run behaviour
+```
+
+Two defects the suite found in the frozen reference are carried rather than fixed, because fixing them during the port would invalidate the comparison: a page-level horizontal scroll at a 375px viewport, and three muted 10px labels below the 4.5:1 the project applies everywhere else. Both are in [`ISSUES.md`](ISSUES.md), and both are listed by `KNOWN_DEFECTS` in the inventory — the checks assert the correct behaviour and stay red, and every run prints them with their reasons rather than hiding them behind a loosened assertion.
 
 The suite keeps a **coverage ledger** ([`inventory.mjs`](tests/behaviour/inventory.mjs)): every behaviour the app must preserve is an id, at least one check must cover it, and every one of `smoke.mjs`'s checks must have a live successor. An uncovered feature fails the run, so "nothing was dropped" is asserted rather than promised. Two asymmetries are declared rather than hidden: the drag gesture can only be driven on the React target (Playwright cannot synthesise an HTML5 `drop`), and `file://` only works on the vanilla one.
 

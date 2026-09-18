@@ -126,6 +126,45 @@ export const REQUIRED = {
 };
 
 /**
+ * Checks that assert a behaviour the **reference app does not have**, with the
+ * reason. Verified defects only.
+ *
+ * An entry here does not weaken an assertion: the check still asserts the
+ * documented invariant and still fails on any target that does not meet it. What
+ * it changes is the gate. Without this list the choice would be between a
+ * permanently red vanilla gate and loosening the assertion until it passes —
+ * and loosening it is how a suite stops being able to fail.
+ *
+ * Every entry is printed on every run with its reason, so a declared defect
+ * cannot rot into an assumption. Anything not listed here fails the run. Adding
+ * an id is a decision, and it has to name a defect, not a test that needs
+ * adjusting.
+ *
+ * Keyed by **check id**, not by feature: a feature with two checks must be able
+ * to carry one declared defect without exempting the other, or the exemption
+ * would mask a fresh regression in the check that was passing.
+ */
+export const KNOWN_DEFECTS = {
+  "i-design-08":
+    "at 375px the page really does scroll sideways (89px), because an absolutely-positioned " +
+    ".visually-hidden span inside the toolbar's horizontally-scrolling strip has no positioned " +
+    "ancestor, so it escapes the strip's clip and extends the document. Measured two ways — " +
+    "documentElement.scrollWidth 464 against a 375 viewport, and window.scrollTo(400,0) leaving " +
+    "scrollX at 89 — see ISSUES.md. The check asserts the documented invariant (page-level " +
+    "horizontal scroll is 0), so it stays red until the port fixes the CSS; the fix is one line " +
+    "and belongs in Phase 3 with the token port.",
+
+  "i-colour-05":
+    "three 10px muted labels sit below the 4.5:1 the project applies to every other label of their " +
+    "kind: `.col-hidden` (the +N HIDDEN badge) at 4.17, `.drawer-kicker` at 4.04 and `.field-label` " +
+    "at 4.17, all three on #6b7280 (`--color-foreground-muted`). The sweep recorded in " +
+    "openkanban-mvp.md moved + ADD CARD, the counters, the filter group names, the ticket number and " +
+    "the storage lamp from muted to secondary for exactly this reason and did not reach these three. " +
+    "Measured against the composited background, so the numbers hold on both the page fill and the " +
+    "drawer header's subtle fill. See ISSUES.md.",
+};
+
+/**
  * Features only one app can express, and why.
  *
  * The drag gesture is the asymmetry the port deliberately creates: Playwright

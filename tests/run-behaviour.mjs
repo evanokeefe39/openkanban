@@ -27,11 +27,24 @@ import { readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { ALL_CHECKS } from "./behaviour/index.mjs";
 import { createCtx } from "./behaviour/context.mjs";
-import { REQUIRED, REQUIRED_CROSS, LEGACY, FEATURE_CAPABILITY } from "./behaviour/inventory.mjs";
+import {
+  REQUIRED,
+  REQUIRED_CROSS,
+  LEGACY,
+  FEATURE_CAPABILITY,
+  KNOWN_DEFECTS,
+} from "./behaviour/inventory.mjs";
 import { supports, CAPABILITIES } from "./behaviour/capabilities.mjs";
 import * as H from "./behaviour/harness.mjs";
 
-const MARK = { pass: "ok  ", fail: "FAIL", skipped: "skip", "not-run": "----" };
+const MARK = {
+  pass: "ok  ",
+  fail: "FAIL",
+  error: "ERROR",
+  skipped: "skip",
+  "not-run": "----",
+  "known-defect": "defect",
+};
 const MAX_FAILURE_SHOTS = 12;
 
 // ---------------------------------------------------------------------------
@@ -128,8 +141,20 @@ function selected(check, only) {
   );
 }
 
-async function runOne(ctx, check, options) {
+/**
+ * Run one check on its own page.
+ *
+ * A page per check, not per module: a check may legitimately break the page it
+ * is handed, and one shared page let `A13`'s deliberately-throwing `Storage`
+ * fail thirteen unrelated checks in later modules — a harness fault that looked
+ * exactly like an app fault. The error collectors live on the session, so the
+ * `A14` aggregate still sees every page.
+ */
+async function runOne(session, check, options, shotBudget) {
+  const page = await session.newPage();
+  const ctx = createCtx({ ...session, page });
   const started = Date.now();
+  let row;
   try {
     const verdict = await withTimeout(
       check.run(ctx),
@@ -137,15 +162,28 @@ async function runOne(ctx, check, options) {
       `timed out after ${options.timeout} ms`
     );
     const passed = verdict && verdict.passed === true;
-    return {
+    row = {
+      ...check,
       status: passed ? "pass" : "fail",
       detail: verdict && verdict.detail !== undefined ? String(verdict.detail) : "",
       ms: Date.now() - started,
     };
   } catch (error) {
     const message = error && error.stack ? error.stack.split("\n").slice(0, 2).join(" ") : String(error);
-    return { status: "fail", detail: message, ms: Date.now() - started };
+    // A thrown check is a BROKEN check, not a measurement — the selector missed,
+    // the fixture was wrong, the page threw. It gets its own status so it can
+    // never be read as "the app disagrees with the inventory", and so a declared
+    // defect can never absorb it: a register that could excuse a harness error
+    // would turn "my selector is wrong" into "the app is wrong".
+    row = { ...check, status: "error", detail: message, ms: Date.now() - started };
   }
+  if ((row.status === "fail" || row.status === "error") && shotBudget.used < shotBudget.max) {
+    shotBudget.used += 1;
+    // a screenshot is evidence, not a gate: never let it fail the check
+    await H.screenshot(page, `${session.target.id}-${check.id}.png`).catch(() => {});
+  }
+  await page.close().catch(() => {});
+  return row;
 }
 
 async function runTarget(browser, targetId, options) {
@@ -170,7 +208,6 @@ async function runTarget(browser, targetId, options) {
 
   const session = await H.createSession(browser, targetId);
   summary.base = session.base;
-  const ctx = createCtx(session);
 
   try {
     // Preflight: can this target render a board at all? If not, nothing can be
@@ -183,7 +220,7 @@ async function runTarget(browser, targetId, options) {
       summary.bootReason = (error && error.message ? error.message : String(error)).split("\n")[0];
     }
 
-    let failures = 0;
+    const shotBudget = { used: 0, max: MAX_FAILURE_SHOTS };
     for (const check of checks) {
       const capability = check.capability;
       if (capability && !supports(targetId, capability)) {
@@ -199,19 +236,12 @@ async function runTarget(browser, targetId, options) {
         summary.results.push({ ...check, status: "not-run", detail: summary.bootReason, ms: 0 });
         continue;
       }
-      const outcome = await runOne(ctx, check, options);
-      const row = { ...check, ...outcome };
+      const row = await runOne(session, check, options, shotBudget);
+      // A check that failed may be asserting a behaviour the reference app is
+      // known not to have. The assertion is not touched; the gate is. It is
+      // printed every run so a declared defect cannot become an assumption.
+      if (row.status === "fail" && check.id in KNOWN_DEFECTS) row.status = "known-defect";
       summary.results.push(row);
-      if (row.status === "fail") {
-        failures += 1;
-        if (failures <= MAX_FAILURE_SHOTS) {
-          try {
-            await H.screenshot(session.page, `${targetId}-${check.id}.png`);
-          } catch {
-            /* a screenshot is evidence, not a gate */
-          }
-        }
-      }
     }
   } finally {
     await session.close();
@@ -227,17 +257,23 @@ async function runTarget(browser, targetId, options) {
   };
   if (summary.booted) {
     const detail = JSON.stringify({
-      uncaught: ctx.errors.uncaught.slice(0, 4),
-      failedRequests: ctx.errors.failedRequests.slice(0, 4),
-      consoleErrors: ctx.errors.consoleErrors.slice(0, 4),
+      uncaught: session.errors.uncaught.slice(0, 4),
+      failedRequests: session.errors.failedRequests.slice(0, 4),
+      consoleErrors: session.errors.consoleErrors.slice(0, 4),
     });
-    const clean = ctx.errors.uncaught.length === 0 && ctx.errors.failedRequests.length === 0;
+    const clean =
+      session.errors.uncaught.length === 0 && session.errors.failedRequests.length === 0;
     summary.results.push({ ...errorCheck, status: clean ? "pass" : "fail", detail, ms: 0 });
   } else {
     summary.results.push({ ...errorCheck, status: "not-run", detail: summary.bootReason, ms: 0 });
   }
 
-  summary.ledger = evaluateLedger(summary.results, summary.booted, targetId);
+  summary.ledger = evaluateLedger(
+    summary.results,
+    summary.booted,
+    targetId,
+    options.only.length ? new Set(checks.map((check) => check.feature)) : null
+  );
   summary.durationMs = Date.now() - startedAt;
   summary.reportPath = await H.writeReport(`behaviour-${targetId}.json`, {
     target: targetId,
@@ -270,13 +306,22 @@ function describeCapability(targetId, capability) {
  * something. A skipped or not-run check does not, which is why a capability gap
  * is reported and not hidden.
  */
-function evaluateLedger(results, booted, targetId) {
-  const ran = (row) => row.status === "pass" || row.status === "fail";
+function evaluateLedger(results, booted, targetId, scope = null) {
+  // A check that ran to a verdict covers its feature even when it failed — it
+  // exists and it measured something. An ERRORED check does not: it measured
+  // nothing, so its feature stays uncovered and is named twice on purpose.
+  const ran = (row) =>
+    row.status === "pass" || row.status === "fail" || row.status === "known-defect";
   const covered = new Set(results.filter(ran).map((row) => row.feature));
+  // `--only` is an authoring tool, not a gate: judge the selection against
+  // itself, or every scoped run ends in a wall of ids the run never intended to
+  // touch and the four results being checked are invisible behind it.
+  const candidates = scope ? [...scope] : Object.keys(REQUIRED);
   const ledger = {
     evaluated: booted,
-    total: Object.keys(REQUIRED).length,
-    covered: Object.keys(REQUIRED).filter((id) => covered.has(id)).length,
+    scoped: Boolean(scope),
+    total: scope ? candidates.length : Object.keys(REQUIRED).length,
+    covered: candidates.filter((id) => covered.has(id)).length,
     missing: [],
     deferred: [],
     unknown: [...covered].filter((id) => !(id in REQUIRED)),
@@ -284,7 +329,7 @@ function evaluateLedger(results, booted, targetId) {
   };
   if (!booted) return ledger;
 
-  for (const id of Object.keys(REQUIRED)) {
+  for (const id of candidates) {
     if (covered.has(id)) continue;
     const capability = FEATURE_CAPABILITY[id];
     // A feature this target cannot express is deferred, not missing — and it is
@@ -294,6 +339,7 @@ function evaluateLedger(results, booted, targetId) {
   }
 
   for (const [name, ids] of Object.entries(LEGACY)) {
+    if (scope && !ids.some((id) => scope.has(id))) continue;
     const unknown = ids.filter((id) => !(id in REQUIRED));
     if (unknown.length) ledger.legacyUncovered.push(`${name} → unknown feature ${unknown.join(", ")}`);
     else if (!ids.some((id) => covered.has(id))) ledger.legacyUncovered.push(name);
@@ -306,8 +352,9 @@ function evaluateLedger(results, booted, targetId) {
 // ---------------------------------------------------------------------------
 
 function printTarget(summary, options) {
-  const counts = { pass: 0, fail: 0, skipped: 0, "not-run": 0 };
+  const counts = { pass: 0, fail: 0, error: 0, skipped: 0, "not-run": 0, "known-defect": 0 };
   for (const row of summary.results) counts[row.status] += 1;
+  const loud = new Set(["fail", "error", "skipped", "known-defect"]);
 
   console.log(`\n${"─".repeat(78)}`);
   console.log(`${summary.label}`);
@@ -320,19 +367,32 @@ function printTarget(summary, options) {
       suite = row.suite;
       console.log(`  ${suite}`);
     }
-    const detail =
-      row.status === "fail" || row.status === "skipped" || options.verbose ? `  ${row.detail}` : "";
+    const detail = loud.has(row.status) || options.verbose ? `  ${row.detail}` : "";
     console.log(`    ${MARK[row.status]} ${row.feature.padEnd(4)} ${row.name}${detail}`);
   }
 
   console.log(
-    `\n${counts.pass} pass · ${counts.fail} fail · ${counts.skipped} skipped · ${counts["not-run"]} not run` +
+    `\n${counts.pass} pass · ${counts.fail} fail · ${counts.error} errored · ${counts.skipped} skipped · ` +
+      `${counts["not-run"]} not run` +
+      (counts["known-defect"] ? ` · ${counts["known-defect"]} declared defect(s)` : "") +
       `   (${summary.durationMs} ms)`
   );
 
+  const declared = summary.results.filter((row) => row.status === "known-defect");
+  if (declared.length) {
+    console.log(`\ndeclared defects — these checks assert the CORRECT behaviour and are red because the app does not:`);
+    for (const row of declared) {
+      console.log(`  ${row.id}  (${row.feature}) — ${KNOWN_DEFECTS[row.id]}`);
+    }
+  }
+
   if (summary.ledger && summary.ledger.evaluated) {
     const { covered, total, missing, deferred, unknown, legacyUncovered } = summary.ledger;
-    console.log(`ledger: ${covered}/${total} feature ids covered`);
+    console.log(
+      summary.ledger.scoped
+        ? `ledger: ${covered}/${total} selected feature ids covered — SCOPED RUN, this is not the full ledger`
+        : `ledger: ${covered}/${total} feature ids covered`
+    );
     if (deferred?.length) {
       console.log(
         `  deferred by capability (${deferred.length}) — covered on the other target: ${deferred.join(" ")}`
@@ -430,24 +490,30 @@ async function main() {
   let uncovered = false;
   for (const summary of summaries) {
     const counts = printTarget(summary, options);
-    if (counts.fail) failed = true;
+    if (counts.fail || counts.error) failed = true;
     if (counts["not-run"]) notRun = true;
     const ledger = summary.ledger;
-    if (ledger && ledger.evaluated && (ledger.missing.length || ledger.legacyUncovered.length)) {
+    // a scoped run cannot judge coverage: it deliberately looked at a subset
+    if (ledger && ledger.evaluated && !ledger.scoped && (ledger.missing.length || ledger.legacyUncovered.length)) {
       uncovered = true;
     }
     for (const row of summary.results) {
-      if (row.feature in REQUIRED_CROSS && row.status === "fail") failed = true;
+      if (row.feature in REQUIRED_CROSS && (row.status === "fail" || row.status === "error")) failed = true;
     }
   }
 
   console.log("");
   if (options.mode === "report") {
-    const total = summaries.reduce(
-      (sum, s) => sum + s.results.filter((r) => r.status === "fail" || r.status === "not-run").length,
-      0
+    const tally = (statuses) =>
+      summaries.reduce((sum, s) => sum + s.results.filter((r) => statuses.includes(r.status)).length, 0);
+    // "failing" and "not run" are different states and read differently: on a
+    // shell with no app yet, everything is not-run, which is the honest state and
+    // not a defect someone should chase.
+    const broken = tally(["fail", "error"]);
+    const unrunnable = tally(["not-run"]);
+    console.log(
+      `REPORT MODE — ${broken} check(s) failing or errored, ${unrunnable} not run. This run is not a gate.`
     );
-    console.log(`REPORT MODE — ${total} check(s) failing or not run. This run is not a gate.`);
     console.log("The gate is `npm run behaviour` against the vanilla app until the port lands (Phase 5).");
     return 0;
   }

@@ -148,8 +148,17 @@ proof that a feature works.
 - The smoke suite drives the real page in a real browser. It reads computed styles, `dataset`
   attributes and `localStorage` directly, so it catches what a unit test cannot: a rule that exists
   but does not apply, an attribute the CSS does not match, a stored board that is not what the UI shows.
-- **New behaviour needs a check in `tests/smoke.mjs`.** A check that cannot fail is worse than no
-  check; assert the observable outcome, not the implementation.
+- **New behaviour needs a check in `tests/behaviour/`, not in `tests/smoke.mjs`.** The dual-target
+  suite is what the port is judged by; `smoke.mjs` is the legacy deploy gate, kept because every one of
+  its checks still has to map to a live successor. A check that cannot fail is worse than no check;
+  assert the observable outcome, not the implementation.
+- **A check that throws is not a check that failed.** They are separate statuses on purpose: a thrown
+  check is a broken selector or fixture, and the runner refuses to let a declared defect absorb one.
+  If a check errors, fix the check — do not add it to `KNOWN_DEFECTS`.
+- **`KNOWN_DEFECTS` is for measured app defects, keyed by check id.** Its entries are checks that
+  assert the *correct* behaviour and are red because the app does not meet it, printed with their
+  reason on every run. Adding an id without a measurement behind it, or loosening an assertion instead,
+  inverts the mechanism: the suite stops being able to fail.
 - **Never assert a pointer or focus invariant the browser does not guarantee.** One check spent
   several rounds failing on "holding D with no card hovered canes nothing" because focus — not the
   pointer — anchors the dependency chain. The app was right and the assertion was wrong.

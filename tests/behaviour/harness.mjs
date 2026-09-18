@@ -166,7 +166,16 @@ export async function launchBrowser() {
 
 const DEFAULT_TIMEOUT = 10_000;
 
-/** A page plus the error channels every run is judged on. */
+/**
+ * A page plus the error channels every run is judged on.
+ *
+ * `newPage()` exists so the runner can give every check its own page. That is
+ * not tidiness: a check may legitimately break the page it is given — `A13`
+ * installs a `Storage` that throws, because "storage unavailable" has to be
+ * exercised somehow — and a page is the only boundary that reliably contains
+ * that. Reusing one page across the suite let a single check poison every later
+ * module's storage reads, which is a fault in the harness, not in the modules.
+ */
 export async function createSession(browser, targetId, { viewport } = {}) {
   const target = TARGETS[targetId];
   const server = await startServer(target.root);
@@ -174,23 +183,32 @@ export async function createSession(browser, targetId, { viewport } = {}) {
     acceptDownloads: true,
     viewport: viewport || { width: 1440, height: 900 },
   });
-  const page = await context.newPage();
-  page.setDefaultTimeout(DEFAULT_TIMEOUT);
 
   const errors = { uncaught: [], failedRequests: [], consoleErrors: [] };
-  page.on("pageerror", (error) => errors.uncaught.push(String(error)));
-  page.on("requestfailed", (request) => {
-    errors.failedRequests.push(`${request.method()} ${request.url()} — ${request.failure()?.errorText || "failed"}`);
-  });
-  page.on("console", (message) => {
-    if (message.type() === "error") errors.consoleErrors.push(message.text());
-  });
+
+  const instrument = async () => {
+    const page = await context.newPage();
+    page.setDefaultTimeout(DEFAULT_TIMEOUT);
+    page.on("pageerror", (error) => errors.uncaught.push(String(error)));
+    page.on("requestfailed", (request) => {
+      errors.failedRequests.push(
+        `${request.method()} ${request.url()} — ${request.failure()?.errorText || "failed"}`
+      );
+    });
+    page.on("console", (message) => {
+      if (message.type() === "error") errors.consoleErrors.push(message.text());
+    });
+    return page;
+  };
+
+  const page = await instrument();
 
   return {
     target,
     base: server.base,
     page,
     errors,
+    newPage: instrument,
     async close() {
       await context.close().catch(() => {});
       await server.close();

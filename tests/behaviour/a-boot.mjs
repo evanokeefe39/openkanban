@@ -433,21 +433,19 @@ export default {
       feature: "A13",
       name: "storage unavailable leaves the board usable in memory",
       run: async (ctx) => {
-        // One-shot: this init script throws on the NEXT navigation only, keyed
-        // off window.name which survives a reload but not a fresh page — so it
-        // cannot poison the checks that run after this one.
+        // Deny storage for the whole life of this page. The page is created per
+        // check and closed after it, so there is nothing left to poison — and an
+        // earlier version of this check that counted navigations with a
+        // `window.name` toggle got that parity wrong on a fresh page (the first
+        // refusal landed on the boot the check does not measure, so storage was
+        // working again by the time it looked). Unconditional is the honest
+        // mechanism: it cannot drift with how many navigations a fixture needs.
         await ctx.page.addInitScript(`
-          if (window.name === 'a13-refuse') {
-            window.name = '';
-            const refuse = () => { throw new Error('storage denied by test'); };
-            Storage.prototype.getItem = refuse;
-            Storage.prototype.setItem = refuse;
-          } else {
-            window.name = 'a13-refuse';
-          }
+          const refuse = () => { throw new Error('storage denied by test'); };
+          Storage.prototype.getItem = refuse;
+          Storage.prototype.setItem = refuse;
         `);
-        await ctx.page.reload();
-        await ctx.freshBoard();
+        await ctx.settle();
         const lamp = await ctx.lamp();
         const toasts = await ctx.toasts();
         const before = await ctx.cards();
