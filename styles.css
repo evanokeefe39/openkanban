@@ -9,16 +9,11 @@
   /* palette — inherited, not invented */
   --color-background: #0a0608;
   --color-background-subtle: #120a0c;
-  --color-surface: #141420;
-  --color-surface-elevated: #1e1e30;
-  --color-surface-interactive: #252540;
   --color-foreground: #e8e8ed;
   --color-foreground-secondary: #9ca3af;
   --color-foreground-muted: #6b7280;
-  --color-border: #27273a;
   --color-border-focus: #6366f1;
   --color-vu-green: #22c55e;
-  --color-vu-yellow: #eab308;
   --color-destructive: #ef4444;
   --color-accent: #f59e0b;
   --ivory: #f9ffd0;
@@ -33,15 +28,24 @@
   /* derived structure */
   --line: rgba(255, 255, 255, 0.1);
   --line-strong: rgba(255, 255, 255, 0.16);
-  --col-bg: #0d0b13;
-  /* ink black: the filter control and the filter pane it opens (user-directed) */
+  /* ink black: every chrome surface — the filter control and the pane it opens, the drawers and the
+     modals. There is no separate "elevated" surface colour: a surface is either the page, a card, or
+     ink, and a hover is a lift over whatever it sits on rather than a fourth plane. */
   --ink-bg: #00161c;
-  /* card surface: warm "coffee bean" against the cool column and panel surfaces, per the user's
-     call — the priority tints below mix into this value, so they follow it automatically */
+  /* the navbar band: carbon black, per the user's call — the one bar that is neither page nor card,
+     so the chrome reads as a strip across the top rather than as a change of background */
+  --navbar-bg: #1c1a1c;
+  /* the one hover lift, a translucent white so it reads on the page, on ink and on a card alike.
+     It replaced a navy plane (#1e1e30) that made every button in the app look like a different
+     control depending on which surface it happened to sit on. */
+  --lift: rgba(255, 255, 255, 0.06);
+  /* card surface: warm "coffee bean" against the cool ink of the chrome, per the user's call — the
+     priority tints below mix into this value, so they follow it automatically */
   --card-bg: #1f1819;
-  /* the hover lift matches the one the neutral surface used: RGB distance ~12 */
+  /* the hover lift, measured: RGB distance ~12 from the resting card */
   --card-bg-hover: #261f20;
-  --inset-bg: #0b0a12;
+  /* recessed planes (inputs, chips, list rows) — warm dark, in the page's family rather than blue */
+  --inset-bg: #0c0909;
 
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
@@ -56,8 +60,6 @@
   --ring-sep: inset 0 0 0 2px rgba(0, 0, 0, 0.55);
   --ring-backing: rgba(0, 0, 0, 0.5);
 
-  /* spacing base unit: 4px */
-  --unit: 4px;
   --col-width: var(--density-col-width);
 
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -88,14 +90,14 @@ body {
 /* scrollbars — quiet, structural */
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--color-border) transparent;
+  scrollbar-color: var(--line-strong) transparent;
 }
 *::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 *::-webkit-scrollbar-thumb {
-  background: var(--color-border);
+  background: var(--line-strong);
 }
 *::-webkit-scrollbar-thumb:hover {
   background: #3a3a55;
@@ -233,8 +235,8 @@ html[data-highlight-priority='1'] .card[data-prio='3'] {
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
-  border-bottom: 1px solid var(--line);
-  background: var(--color-background-subtle);
+  border-bottom: 1px solid var(--line-strong);
+  background: var(--navbar-bg);
   overflow-x: auto;
   overflow-y: hidden;
 }
@@ -280,7 +282,9 @@ html[data-highlight-priority='1'] .card[data-prio='3'] {
   gap: 6px;
   font-size: 10px;
   letter-spacing: 0.12em;
-  color: var(--color-foreground-muted);
+  /* secondary, not muted: on the carbon band the muted grey measured 3.58:1 at 10px, and this is the
+     one readout that tells you whether your work was written to storage */
+  color: var(--color-foreground-secondary);
   white-space: nowrap;
 }
 .lamp-dot {
@@ -316,7 +320,7 @@ html[data-highlight-priority='1'] .card[data-prio='3'] {
     border-color 120ms var(--ease-out), transform 100ms var(--ease-out);
 }
 .btn:hover {
-  background: var(--color-surface-elevated);
+  background: var(--lift);
   color: var(--color-foreground);
   border-color: var(--line-strong);
 }
@@ -568,7 +572,7 @@ input[type='date'].input {
   transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out);
 }
 .seg button:hover:not(:disabled):not([aria-pressed='true']) {
-  background: var(--color-surface-elevated);
+  background: var(--lift);
   color: var(--color-foreground);
 }
 .seg button[aria-pressed='true'] {
@@ -607,7 +611,7 @@ button.chip {
   transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out);
 }
 button.chip:hover {
-  background: var(--color-surface-elevated);
+  background: var(--lift);
   color: var(--color-foreground);
 }
 /* selected filter chip — the ivory ON treatment used by the segmented controls */
@@ -660,12 +664,11 @@ button.chip[aria-pressed='true']:hover {
   flex: 0 0 var(--col-width);
   width: var(--col-width);
   max-height: 100%;
-  background: var(--col-bg);
+  background: var(--color-background);
   border: 1px solid var(--line);
 }
-/* the header is the page colour, so the column body is what reads as the container — and because
-   the band now shares the page's fill, its bottom hairline is the only thing drawing the boundary,
-   so it carries the stronger line rather than the standard one */
+/* the column shares the page's fill, so the 1px rule is what draws it and the header band is marked
+   by its own stronger bottom hairline rather than by a change of surface */
 .col-head {
   display: flex;
   align-items: center;
@@ -955,7 +958,7 @@ html[data-deps-mode='1'] .deps-on {
 dialog {
   color: var(--color-foreground);
   font-family: var(--font-mono);
-  background: var(--color-surface);
+  background: var(--ink-bg);
   border: 1px solid var(--line-strong);
   padding: 0;
 }
@@ -1081,7 +1084,7 @@ dialog::backdrop {
   border-bottom: 0;
 }
 .picker button:hover:not(:disabled) {
-  background: var(--color-surface-elevated);
+  background: var(--lift);
   color: var(--color-foreground);
 }
 .picker button:disabled {
@@ -1213,7 +1216,7 @@ dialog::backdrop {
 .toast {
   border: 1px solid var(--line-strong);
   border-left-width: 3px;
-  background: var(--color-surface);
+  background: var(--ink-bg);
   color: var(--color-foreground-secondary);
   font-size: 11px;
   line-height: 1.5;
