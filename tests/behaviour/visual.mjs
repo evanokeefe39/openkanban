@@ -43,7 +43,7 @@ const VIEWPORTS = [
  * is the finding this comparison is here to produce.
  */
 const FROZEN = { channel: 24, ratio: 0.02 };
-const CHANNEL_TOLERANCE = Number(process.env.OK_VISUAL_CHANNEL_TOLERANCE) || FROZEN.channel;
+export const CHANNEL_TOLERANCE = Number(process.env.OK_VISUAL_CHANNEL_TOLERANCE) || FROZEN.channel;
 const RATIO_TOLERANCE = Number(process.env.OK_VISUAL_RATIO_TOLERANCE) || FROZEN.ratio;
 const WIDENED = CHANNEL_TOLERANCE > FROZEN.channel || RATIO_TOLERANCE > FROZEN.ratio;
 
@@ -140,8 +140,13 @@ async function fontLoaded(page) {
  * Count the pixels that disagree, in the browser: it already has a PNG decoder,
  * and a canvas diff needs no dependency in a repository whose whole selling
  * point is having none.
+ *
+ * Exported so it can be fed a pair that differs by a **known** amount. Comparing
+ * two renders of the same page only ever proves `ratio === 0`, which a diff that
+ * always returned zero would also pass — the arithmetic, the channel loop and the
+ * tolerance comparison are unverified by a matching pair.
  */
-async function diffInBrowser(scratch, leftUrl, rightUrl) {
+export async function diffInBrowser(scratch, leftUrl, rightUrl) {
   return scratch.evaluate(
     async ([a, b, channelTolerance]) => {
       const load = (src) =>

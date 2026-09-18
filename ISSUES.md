@@ -219,6 +219,25 @@ every check in the suite drove the board at 1440 where the centring is exactly r
 because a state that had to click a card at 375 could not establish itself, and the state's own
 verification caught it rather than passing vacuously.
 
+The rule that does it is `.board` in `styles.css` (not `#board` — there is no such rule):
+
+```css
+.board {
+  display: flex;
+  overflow-x: auto;
+  justify-content: center;
+  margin-inline: auto;
+  width: max-content;
+  max-width: 100%;
+}
+```
+
+`width: max-content` with `max-width: 100%` clamps the box to the viewport, so the auto margins get no
+room to absorb anything, and `justify-content: center` then splits the overflow across both sides. The
+sheet's own comment above it says "Once they cannot fit, the auto margins resolve to zero and the row
+scrolls from the first column as usual" — that is the stated intent, and the measurement above is the
+disproof of it.
+
 Confirmed as layout rather than a measurement artifact, because that was the competing explanation and
 a geometry read taken before a relayout would look identical: a context created at 375 and a context
 resized from 1440 down to 375 produce the same numbers to the pixel (`firstColumnX` −498 at
@@ -228,10 +247,11 @@ moves it further away, to −1009. Note also that the board's own `scrollWidth` 
 track's real width (~1400), because overflow to the left is not counted at all: roughly 890px of the
 board is outside its own scroll range.
 
-The fix is safe centring — `justify-content: safe center` (or applying the auto margin only while the
-track fits) — which keeps the centred board at 1440 and falls back to start alignment when the content
-overflows. It belongs in the port's stylesheet with the other two, and it is the third defect carried
-on the vanilla target only.
+The fix is `justify-content: safe center`, which is the CSS feature for exactly this case: unsafe
+centring overflows both sides, safe centring falls back to `start` when the content does not fit. It
+keeps the centred board at 1440, where the columns do fit and `margin-inline: auto` already centres the
+box. It belongs in the port's stylesheet with the other two, and it is the third defect carried on the
+vanilla target only.
 
 ## Known limitations
 
