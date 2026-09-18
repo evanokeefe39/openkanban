@@ -91,8 +91,8 @@
     },
     {
       key: 'highlightPriority',
-      label: 'HIGHLIGHT BY PRIORITY',
-      title: 'Tint the whole card by priority instead of just the rail',
+      label: 'CARD BACKGROUND BY PRIORITY',
+      title: 'Fill each card by its priority instead of drawing only the 2px rail',
     },
   ];
 
@@ -944,10 +944,14 @@
     ];
     if (overrides.length) parts.push(`${overrides.length} OVERRIDE`);
     $('counters').textContent = parts.join('  ·  ');
-    $('prio-legend').hidden = !all.some((c) => c.priority > 0);
+    // the legend explains the rail, so it is only worth showing when the rail is: with priority
+    // rails off there is nothing on the board for it to refer to
+    $('prio-legend').hidden = !(view.showPriority && all.some((c) => c.priority > 0));
     $('btn-reset').disabled = all.length === 0;
     const settingsReset = $('settings-reset');
     if (settingsReset) settingsReset.disabled = all.length === 0;
+    // the read-out row offers the sample back while the board is empty, and only then
+    document.documentElement.dataset.boardEmpty = all.length === 0 ? '1' : '0';
   }
 
   /**
@@ -1207,34 +1211,34 @@
   }
 
   /**
-   * Chain rings are patched onto the existing nodes: a full re-render on every
+   * Chain canes are patched onto the existing nodes: a full re-render on every
    * hover would reset each column's scroll position under the pointer.
+   *
+   * Two directions, drawn independently: which cards this one blocks (its
+   * dependents, red) and which cards block it (its unfinished blockers, cream).
+   * Both are computed transitively, so the cane reaches through the whole chain
+   * rather than just the immediate edges.
    */
   function applyChainHighlight() {
-    const up = ui.chainId ? blockedChain(ui.chainId) : null;
-    const down = ui.chainId ? closure(ui.chainId, 'down') : null;
+    // The dependency read-out is hover plus the key: holding D turns a plain hover (which only
+    // lifts the card) into a read-out of that card's chain. Without D there are no canes, and
+    // with D but no hover there is nothing to read — so the board only ever answers a question
+    // about one card, and never lights up in full.
+    const anchor = ui.depsHeld ? ui.chainId : null;
     document.documentElement.dataset.depsMode = ui.depsHeld ? '1' : '0';
+    const blocks = anchor ? closure(anchor, 'down') : null;
+    const blocked = anchor ? blockedChain(anchor) : null;
     for (const node of document.querySelectorAll('#board .card')) {
       const id = node.dataset.cardId;
-      let relation = null;
-      if (ui.chainId && id === ui.chainId) relation = 'self';
-      else if (up && up.has(id)) relation = down && down.has(id) ? 'up-down' : 'up';
-      else if (down && down.has(id)) relation = 'down';
-      if (relation) node.dataset.chain = relation;
+      const isBlocks = !!blocks && blocks.has(id);
+      const isBlocked = !!blocked && blocked.has(id);
+      // the hovered card is the subject, not a verb in the sentence, so it gets no cane of its own
+      // — and no refs row either: the two canes already say which way each edge runs.
+      if (id === anchor) node.removeAttribute('data-chain');
+      else if (isBlocks && isBlocked) node.dataset.chain = 'both';
+      else if (isBlocks) node.dataset.chain = 'blocks';
+      else if (isBlocked) node.dataset.chain = 'blocked';
       else node.removeAttribute('data-chain');
-
-      // Hold-D overlay: amber where a card is waiting, indigo where something waits on it.
-      // Derived from the graph on each pass, so releasing D leaves nothing behind to clean up.
-      let deps = null;
-      if (ui.depsHeld) {
-        const waits = unfinishedBlockers(id).length > 0;
-        const holds = dependentsOf(id).length > 0;
-        if (waits && holds) deps = 'both';
-        else if (waits) deps = 'waits';
-        else if (holds) deps = 'holds';
-      }
-      if (deps) node.dataset.deps = deps;
-      else node.removeAttribute('data-deps');
     }
   }
 
@@ -1250,6 +1254,10 @@
     wrapper.draggable = true;
     wrapper.dataset.blocked = blocked ? '1' : '0';
     wrapper.dataset.prio = String(target.priority);
+    // the inner dependency cane; the outer one is drawn by the card's own ::after. Two elements are
+    // needed because one cannot carry two masked rings, and a card can be both a blocker and
+    // blocked at once.
+    wrapper.appendChild(el('span', 'card-cane'));
 
     const main = el('button', 'card-main');
     main.type = 'button';
@@ -1648,6 +1656,27 @@
     ].join('\n');
   }
 
+  /**
+   * Close a dialog when its backdrop is clicked.
+   *
+   * A click on `::backdrop` is delivered to the dialog element itself, so the test is whether the
+   * point is inside the dialog's own box: the drawers are right-aligned panels, and the whole area
+   * beside them is backdrop. Pointer events are compared rather than `event.target`, which is the
+   * dialog either way and so cannot distinguish the two.
+   */
+  function bindBackdropClose(dialogId) {
+    const dialog = $(dialogId);
+    dialog.addEventListener('click', (event) => {
+      const box = dialog.getBoundingClientRect();
+      const inside =
+        event.clientX >= box.left &&
+        event.clientX <= box.right &&
+        event.clientY >= box.top &&
+        event.clientY <= box.bottom;
+      if (!inside) dialog.close();
+    });
+  }
+
   // ==========================================================================
   // Confirm dialog
   // ==========================================================================
@@ -1949,8 +1978,11 @@
       $('settings-dialog').close();
       openResetDialog();
     });
+    $('empty-sample').addEventListener('click', () => loadSampleBoard());
     $('settings-close').addEventListener('click', () => $('settings-dialog').close());
     $('settings-dialog').addEventListener('close', () => flushSettingsFields());
+    bindBackdropClose('settings-dialog');
+    bindBackdropClose('card-dialog');
     $('settings-add-column').addEventListener('click', addColumn);
     $('settings-name').addEventListener('change', (event) => setBoardName(event.target.value));
 
@@ -1968,6 +2000,9 @@
       view[input.dataset.view] = input.checked;
       applyView();
       saveView();
+      // the header reads the view too — the priority legend follows the rail toggle — so a view
+      // change has to repaint it, not just set the root attributes
+      renderHeader();
     });
 
     $('settings-columns').addEventListener('click', (event) => {

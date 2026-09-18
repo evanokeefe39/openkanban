@@ -46,16 +46,18 @@
 
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  /* Dependency rings and arrow refs: a coloured hairline with a dark line inside (or behind) it. The
-     dark step is what makes the colour legible on ANY card fill — measured on the pale P2 tint, the
-     indigo ring alone reads 1.28:1 against the fill and 1.91:1 as arrow text. With the separator
-     under the ring and a dark strip behind the refs, the same colours read 4.5:1 or better on all
-     four surfaces (plain, P0, P1, P2). Without it, turning on HIGHLIGHT BY PRIORITY effectively
-     erases the dependency overlay. */
+  /* The arrow refs' two hues, read against the dark strip they sit on rather than the card fill:
+     amber for what a card waits on, indigo for what waits on it. */
   --ring-amber: rgba(245, 158, 11, 0.95);
   --ring-indigo: rgba(165, 168, 255, 0.95);
-  --ring-sep: inset 0 0 0 2px rgba(0, 0, 0, 0.55);
   --ring-backing: rgba(0, 0, 0, 0.5);
+  /* The two dependency directions. Red candy cane marks what this card blocks; a solid white line
+     marks what blocks it. Only the blocking direction is striped — the contrast between a striped
+     edge and a plain one is what tells the two apart at a glance, where two coloured rings of the
+     same construction read as one treatment. */
+  --cane-blocks-a: #ef4444;
+  --cane-blocks-b: #3a1210;
+  --cane-blocked-solid: #f5f0e6;
 
   --col-width: var(--density-col-width);
 
@@ -190,6 +192,17 @@ html[data-highlight-priority='1'] .card[data-prio='3'] {
   background: color-mix(in oklab, var(--color-priority-p2) 34%, var(--card-bg));
   border-color: color-mix(in oklab, var(--color-priority-p2) 34%, var(--line));
 }
+/* An emphasised border is the tint's way of saying "P0" and the cane's way of saying "depends" —
+   two border systems on one edge read as neither. So while a card is carrying a dependency cane
+   the tint keeps its fill and gives up its border, and the cane is drawn against the plain line
+   instead of a pale priority-coloured one at 40% alpha, which washed it out.
+   Listed per tier so the selector carries the same attribute count as the rules it overrides:
+   an equally-specific rule later in the sheet wins, but a less specific one would not. */
+html[data-highlight-priority='1'] .card[data-prio='1'][data-chain],
+html[data-highlight-priority='1'] .card[data-prio='2'][data-chain],
+html[data-highlight-priority='1'] .card[data-prio='3'][data-chain] {
+  border-color: var(--line);
+}
 
 .view-rows {
   border: 1px solid var(--line);
@@ -232,15 +245,46 @@ html[data-highlight-priority='1'] .card[data-prio='3'] {
 /* The read-out row under the bar: no border, no fill, no separator of its own — it carries the
    overlay's hotkey and the priority key, and must not read as a second toolbar. */
 .status-row {
-  display: flex;
+  display: grid;
+  /* message | gutter | keys | gutter | legend — equal gutters keep the key cluster centred on the
+     page no matter how wide the message or the legend gets */
+  grid-template-columns: 1fr minmax(0, auto) auto minmax(0, auto) 1fr;
   align-items: center;
   gap: 10px;
   padding: 6px 12px;
   overflow-x: auto;
   overflow-y: hidden;
 }
-.status-row > .spacer {
-  flex: 1 1 auto;
+.row-message {
+  grid-column: 1;
+  justify-self: start;
+  display: none;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+html[data-board-empty="1"] .row-message {
+  display: flex;
+}
+.row-keys {
+  grid-column: 3;
+  justify-self: center;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.row-gutter {
+  min-width: 0;
+}
+.prio-legend {
+  grid-column: 5;
+  justify-self: end;
+}
+.row-message-text {
+  color: var(--color-foreground-muted);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 .topbar {
@@ -812,6 +856,10 @@ button.chip[aria-pressed='true']:hover {
 .card::before {
   content: '';
   position: absolute;
+  /* under the dependency canes (z-index 2) but over the card fill: when a card is being read for
+     its dependencies the border is the message, so the rail gives up the top edge rather than
+     painting across the cane */
+  z-index: 1;
   inset: 0 0 auto 0;
   height: 2px;
   background: var(--prio-color, transparent);
@@ -826,8 +874,9 @@ button.chip[aria-pressed='true']:hover {
   --prio-color: var(--color-priority-p2);
 }
 .card:hover {
+  /* the lift is the whole of the general hover: no border change, so the board stays still as the
+     pointer crosses it and a border only ever means a dependency */
   background: var(--card-bg-hover);
-  border-color: var(--line-strong);
 }
 .card-main {
   display: grid;
@@ -886,8 +935,9 @@ html[data-show-numbers='0'] .card-num {
 html[data-show-numbers='0'] .card-main {
   column-gap: 0;
 }
-/* the wiring in numbers — only while D is held, so the resting card stays quiet. The row sits on its
-   own dark strip so the amber/indigo text is never read against the card fill. */
+/* the wiring in numbers — only while D is held, and only on the hovered card's chain, so this
+   reads as one card's wiring rather than a board-wide mode. The row sits on its own dark strip so
+   the amber/indigo text is never read against the card fill. */
 .card-refs {
   display: none;
   grid-column: 1 / -1;
@@ -900,7 +950,7 @@ html[data-show-numbers='0'] .card-main {
   letter-spacing: 0.02em;
   font-variant-numeric: tabular-nums;
 }
-html[data-deps-mode='1'] .card-refs {
+html[data-deps-mode='1'] .card[data-chain] .card-refs {
   display: flex;
 }
 .ref-up {
@@ -921,40 +971,60 @@ html[data-deps-mode='1'] .card-refs {
   box-shadow: inset 0 -2px 0 0 var(--ivory);
 }
 
-/* dependency chain highlight (inset rings, consistent with borders-only depth).
-   The neutral ring is the foreground grey, NOT the ivory/cream: cream is P2's priority colour, so
-   using it here would make one value mean both "a card with no priority is hovered" and "this is a
-   P2 card". Ivory is also reserved for the single primary action in a dialog. */
-.card[data-chain='self'] {
-  box-shadow: inset 0 0 0 1px rgba(232, 232, 237, 0.85), var(--ring-sep);
-}
-/* when priority is on the board as colour — rails or full-card tint — hovering a card rings it in
-   its own priority instead of the neutral grey, so the hover reads as that card, not as a mode */
-html[data-show-priority='1'] .card[data-chain='self'],
-html[data-highlight-priority='1'] .card[data-chain='self'] {
-  box-shadow: inset 0 0 0 1px var(--prio-color, rgba(232, 232, 237, 0.85)), var(--ring-sep);
-}
-.card[data-chain='up'] {
-  box-shadow: inset 0 0 0 1px var(--ring-amber), var(--ring-sep);
-}
-.card[data-chain='down'] {
-  box-shadow: inset 0 0 0 1px var(--ring-indigo), var(--ring-sep);
-}
-.card[data-chain='up-down'] {
-  box-shadow: inset 0 0 0 1px var(--ring-amber), var(--ring-sep), inset 0 0 0 4px var(--ring-indigo);
+/* ---------------------------------------------------------------------------
+   Dependency highlight — the only place hovering a card does more than lift it.
+
+   The general hover is just the card's own background lifting (no border of any
+   kind: a ring on every hover made the board look like it was flickering as the
+   pointer crossed it). The border is reserved for dependencies, where it carries
+   meaning: a red candy cane on what the card blocks, and a solid white line on
+   what blocks it. Static, so nothing on the board moves while it is read.
+
+   A card is often BOTH a blocker and blocked, so the two need two separate
+   canvases — one element cannot carry two rings:
+     .card::after          the candy cane. Red, where the card blocks something.
+     .card-cane (a child)  the solid line. White, where the card is blocked.
+   `::before` is the priority rail and is not reusable here.
+
+   The cane is a repeating diagonal gradient masked down to a 2px ring;
+   `border-image` cannot be clipped that way, so the mask does the work.
+--------------------------------------------------------------------------- */
+.card[data-chain]::after,
+.card-cane {
+  position: absolute;
+  /* above the priority rail (z-index 1) so a dependency cane crosses the top edge rather than being
+     cut by it: when a card is being read for its dependencies the border is the message */
+  z-index: 2;
+  inset: 0;
+  content: '';
+  pointer-events: none;
+  padding: 2px;
+  -webkit-mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
 }
 
-/* hold-D overlay: the same two hues as the chain, worn by every card at once — and heavier than the
-   hover chain, because this is a mode the user asked for and it must read over the palest tint */
-html[data-deps-mode='1'] .card[data-deps='waits'] {
-  box-shadow: inset 0 0 0 2px var(--ring-amber), inset 0 0 0 4px rgba(0, 0, 0, 0.55);
+/* blocks — the static red candy cane, on the outer edge */
+.card[data-chain='blocks']::after,
+.card[data-chain='both']::after {
+  background-image: repeating-linear-gradient(
+    45deg,
+    var(--cane-blocks-a) 0 6px,
+    var(--cane-blocks-b) 6px 12px
+  );
 }
-html[data-deps-mode='1'] .card[data-deps='holds'] {
-  box-shadow: inset 0 0 0 2px var(--ring-indigo), inset 0 0 0 4px rgba(0, 0, 0, 0.55);
+
+/* blocked — a solid white line, inset one step so it reads separately from the cane */
+.card[data-chain='blocked'] .card-cane,
+.card[data-chain='both'] .card-cane {
+  inset: 4px;
+  background: var(--cane-blocked-solid);
 }
-html[data-deps-mode='1'] .card[data-deps='both'] {
-  box-shadow: inset 0 0 0 2px var(--ring-amber), inset 0 0 0 4px rgba(0, 0, 0, 0.55),
-    inset 0 0 0 6px var(--ring-indigo);
+/* a card that is only blocked has no cane, so its white line takes the outer edge */
+.card[data-chain='blocked']::after {
+  background: var(--cane-blocked-solid);
+}
+.card[data-chain='blocked'] .card-cane {
+  display: none;
 }
 
 /* the hint doubles as the mode indicator: the label the key is named after */
@@ -967,6 +1037,28 @@ html[data-deps-mode='1'] .card[data-deps='both'] {
      the page background measured 4.17:1 at 10px — under AA for the app's headline feature */
   color: var(--color-foreground-secondary);
   white-space: nowrap;
+}
+/* The key is drawn as a keycap, the way editors draw a shortcut in a tooltip: a bordered cap with a
+   lit top edge and a darker foot, sitting on the baseline of the words around it. "hold D" as plain
+   text reads as a word — and the hotkey is the app's headline feature, so it has to look like a key
+   at a glance rather than be inferred from the sentence. The cap is the inset surface plus a 2px
+   foot, which is what sells it as something to press. */
+.kbd {
+  display: inline-block;
+  min-width: 16px;
+  margin: 0 4px;
+  padding: 2px 5px 1px;
+  border: 1px solid var(--line-strong);
+  border-top-color: rgba(255, 255, 255, 0.28);
+  border-bottom: 2px solid rgba(0, 0, 0, 0.55);
+  background: var(--inset-bg);
+  color: var(--ivory);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
 }
 .deps-on {
   display: none;

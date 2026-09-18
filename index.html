@@ -64,18 +64,30 @@
         <button class="btn danger" id="btn-reset" type="button" title="Delete every card on this board"><svg class="icon lucide-trash-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>RESET</button>
       </header>
 
-      <!-- Read-outs rather than controls: the overlay's hotkey and the priority key. They sit under
-           the bar with no border and no fill of their own, so nothing here competes with the board. -->
+      <!-- Read-outs rather than controls: the hotkeys and the priority key. They sit under the bar
+           with no border and no fill of their own, so nothing here competes with the board. -->
       <div class="status-row">
-        <span
-          class="deps-indicator"
-          id="deps-indicator"
-          title="Hold the D key to show every dependency edge at once: amber cards are waiting on something, indigo cards hold something up, and each card lists the numbers it is wired to"
-        >
-          <span class="deps-keys">HOLD D — DEPENDENCIES</span>
-          <span class="deps-on">SHOWING DEPENDENCIES</span>
+        <!-- Left: things the app has to tell you, and the one action that answers them. Empty on a
+             healthy board, so the row is quiet until it has something to say. -->
+        <span class="row-message" id="empty-prompt">
+          <span class="row-message-text">BOARD IS EMPTY</span>
+          <button class="btn" id="empty-sample" type="button">LOAD SAMPLE BOARD</button>
         </span>
-        <span class="spacer"></span>
+        <!-- The row's three zones: message left, keys centre, legend right. The outers are equal
+             fixed-width gutters so the middle stays centred on the page however much the message
+             or the legend grows. -->
+        <span class="row-gutter"></span>
+        <span class="row-keys" id="row-keys">
+          <span
+            class="deps-indicator"
+            id="deps-indicator"
+            title="Hold the D key, then hover a card, to see what it is waiting on and what is waiting on it"
+          >
+            <span class="deps-keys"><kbd class="kbd">D</kbd> HOVER FOR DEPENDENCIES</span>
+            <span class="deps-on">SHOWING DEPENDENCIES</span>
+          </span>
+        </span>
+        <span class="row-gutter"></span>
         <span
           class="prio-legend"
           id="prio-legend"

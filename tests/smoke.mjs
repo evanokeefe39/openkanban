@@ -227,41 +227,60 @@ async function run() {
     );
     await closeCard(page);
 
-    // 7 — hold D shows the wiring, releasing it clears the wiring
+    // 7 — hold D turns a hover into a dependency read-out, releasing it clears that
+    // D is a modifier on the dependency read-out, not a board-wide overlay: with a card hovered it
+    // canes that card's chain only, in both directions. c-drawer (#3) is blocked by #1 and blocks
+    // #7, so its chain exercises both at once.
+    //
+    // Deliberately NOT asserted: that holding D with the pointer "nowhere" canes nothing. The
+    // chain follows focus as well as hover, and a closed drawer leaves focus on the card it was
+    // opened from — so what is under the pointer is not the only thing that can anchor a chain.
+    // Asserting it here would be testing a pointer invariant the browser does not promise.
     await page.keyboard.down("d");
     await page.waitForFunction(() => document.documentElement.dataset.depsMode === "1");
+    const target = await page.evaluate(() => {
+      const n = document.querySelector('.card[data-card-id="c-drawer"]');
+      const r = n.getBoundingClientRect();
+      return { x: r.x + 20, y: r.y + 12 };
+    });
+    await page.mouse.move(target.x, target.y);
+    // wait for the chain to appear on the cards that WEAR a cane — never on the hovered card,
+    // which is deliberately bare (asserted below)
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll("#board .card[data-chain]")].some((c) => c.dataset.cardId === "c-shell")
+    );
     const wiring = await page.evaluate(() => {
-      const waiting = document.querySelector('.card[data-card-id="c-cycle"]');
-      const holding = document.querySelector('.card[data-card-id="c-graph"]');
+      const chain = [...document.querySelectorAll("#board .card[data-chain]")].map(
+        (c) => `${c.dataset.cardId}:${c.dataset.chain}`
+      );
+      const shown = [...document.querySelectorAll(".card-refs")].filter(
+        (r) => getComputedStyle(r).display !== "none"
+      );
+      const hovered = document.querySelector('.card[data-card-id="c-drawer"]');
       return {
-        bothPresent: !!(waiting && holding),
-        waitRings: document.querySelectorAll('#board .card[data-deps="waits"]').length,
-        holdRings: document.querySelectorAll('#board .card[data-deps="holds"]').length,
-        waitRefs: waiting ? waiting.querySelector(".card-refs").textContent.replace(/\s+/g, " ").trim() : "",
-        holdRefs: holding ? holding.querySelector(".card-refs").textContent.replace(/\s+/g, " ").trim() : "",
-        refsHidden: [...document.querySelectorAll(".card-refs")].every((r) => getComputedStyle(r).display === "none"),
+        chain,
+        refsShown: shown.length,
+        refsAllOnChain: shown.every((r) => r.closest(".card").dataset.chain),
+        // the hovered card is the subject of the sentence, so it wears neither cane
+        hoveredHasCane: !!hovered.dataset.chain,
+        // #1 blocks it, #7 it blocks: both directions present in one chain
+        blockedByUp: chain.some((c) => c === "c-shell:blocked"),
+        blocksDown: chain.some((c) => c === "c-chain:blocks"),
       };
     });
     await page.keyboard.up("d");
     await page.waitForFunction(() => document.documentElement.dataset.depsMode === "0");
-    // the hover chain paints the same ring attributes, so park the pointer away from the board
-    // before asserting the resting state: clicks have been moving the real mouse around
-    await page.mouse.move(0, 0);
-    await page.waitForFunction(() => document.querySelectorAll("#board .card[data-deps]").length === 0, null, { timeout: 5000 }).catch(() => {});
-    const cleared = await page.evaluate(() => ({
-      rings: document.querySelectorAll("#board .card[data-deps]").length,
-      refsShown: [...document.querySelectorAll(".card-refs")].filter((r) => getComputedStyle(r).display !== "none").length,
-    }));
+    await page.mouse.move(4, 4);
+    await page.waitForFunction(() => document.querySelectorAll("#board .card[data-chain]").length === 0);
+    const cleared = await page.evaluate(() => document.querySelectorAll("#board .card[data-chain]").length);
     check(
-      "holding D shows each card's wiring, releasing clears it",
-      wiring.bothPresent &&
-        wiring.waitRings > 0 &&
-        wiring.holdRings > 0 &&
-        /← #\d/.test(wiring.waitRefs) &&
-        /→ #\d/.test(wiring.holdRefs) &&
-        !wiring.refsHidden &&
-        cleared.rings === 0 &&
-        cleared.refsShown === 0,
+      "D plus a hover canes that card's chain in both directions, and releasing clears it",
+      !wiring.hoveredHasCane &&
+        wiring.blockedByUp &&
+        wiring.blocksDown &&
+        wiring.refsShown > 0 &&
+        wiring.refsAllOnChain &&
+        cleared === 0,
       JSON.stringify({ ...wiring, cleared })
     );
 

@@ -4,7 +4,8 @@
   "private": true,
   "description": "A kanban board with dependencies, as one static page. No build step, no server, no accounts.",
   "scripts": {
-    "check": "node --check app.js && node --check tests/smoke.mjs && node tests/check-styles.mjs",
+    "serve": "node tools/serve.mjs",
+    "check": "node --check app.js && node --check tests/smoke.mjs && node --check tools/serve.mjs && node tests/check-styles.mjs",
     "test": "node tests/smoke.mjs"
   },
   "engines": {
