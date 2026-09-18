@@ -96,7 +96,8 @@ Two mechanical traps when you do instrument the page:
 - **`--lift` is the only hover treatment.** A new hover that invents its own background or adds a
   shadow breaks the "a button looks the same wherever it sits" property.
 - **One colour, one meaning.** Amber is the accent *and* the warning hue, and must never be used for
-  focus, selection or hover. Cream is P2 and nothing else. The neutral ring is the foreground grey.
+  focus, selection or hover. Cream is P2 and nothing else; the priority legend's no-priority key is a
+  hollow dashed outline in the muted grey, not a fourth colour.
   Ask of every new colour: what does this already mean here?
 - **1px rules, zero radius, no depth shadows.** Depth is not how this design separates things.
 - **Contrast measured.** 4.5:1 text, 3:1 graphics. A colour change obliges you to re-measure
