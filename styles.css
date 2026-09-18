@@ -28,13 +28,10 @@
   /* derived structure */
   --line: rgba(255, 255, 255, 0.1);
   --line-strong: rgba(255, 255, 255, 0.16);
-  /* ink black: every chrome surface — the filter control and the pane it opens, the drawers and the
-     modals. There is no separate "elevated" surface colour: a surface is either the page, a card, or
-     ink, and a hover is a lift over whatever it sits on rather than a fourth plane. */
+  /* ink black: the filter control and the pane it opens, the modals, and the toasts. The page, the
+     cards and the sidebar are the other three surfaces — the bar and the columns share the page's
+     own fill, so chrome is drawn by rules rather than by a change of plane. */
   --ink-bg: #00161c;
-  /* the navbar band: carbon black, per the user's call — the one bar that is neither page nor card,
-     so the chrome reads as a strip across the top rather than as a change of background */
-  --navbar-bg: #1c1a1c;
   /* the one hover lift, a translucent white so it reads on the page, on ink and on a card alike.
      It replaced a navy plane (#1e1e30) that made every button in the app look like a different
      control depending on which surface it happened to sit on. */
@@ -100,7 +97,7 @@ body {
   background: var(--line-strong);
 }
 *::-webkit-scrollbar-thumb:hover {
-  background: #3a3a55;
+  background: rgba(255, 255, 255, 0.24);
 }
 *::-webkit-scrollbar-track {
   background: transparent;
@@ -226,8 +223,24 @@ html[data-highlight-priority='1'] .card[data-prio='3'] {
   display: grid;
   /* minmax(0,1fr) stops a nowrap row from forcing the document wider than the viewport */
   grid-template-columns: minmax(0, 1fr);
+  /* topbar, status row, then the board takes every remaining pixel — which is what makes every
+     column reach the bottom of the page rather than stopping at its last card */
   grid-template-rows: auto auto minmax(0, 1fr);
   height: 100dvh;
+}
+
+/* The read-out row under the bar: no border, no fill, no separator of its own — it carries the
+   overlay's hotkey and the priority key, and must not read as a second toolbar. */
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.status-row > .spacer {
+  flex: 1 1 auto;
 }
 
 .topbar {
@@ -236,7 +249,7 @@ html[data-highlight-priority='1'] .card[data-prio='3'] {
   gap: 8px;
   padding: 6px 12px;
   border-bottom: 1px solid var(--line-strong);
-  background: var(--navbar-bg);
+  background: var(--color-background);
   overflow-x: auto;
   overflow-y: hidden;
 }
@@ -258,6 +271,10 @@ html[data-highlight-priority='1'] .card[data-prio='3'] {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* the title does not shrink: with the toolbar's controls on one row, a squeezed title truncated
+     to "MA…" was the first thing the eye landed on. The bar scrolls instead, and the search field
+     scales with the viewport so it gives way first. */
+  flex: 0 0 auto;
   max-width: 34ch;
 }
 
@@ -390,31 +407,17 @@ html[data-highlight-priority='1'] .card[data-prio='3'] {
   border-color: var(--line);
 }
 
-.filters {
-  display: flex;
-  flex-direction: column;
-  border-bottom: 1px solid var(--line);
-  position: relative;
-}
-.filter-strip {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
-  overflow-x: auto;
-  overflow-y: hidden;
-}
 .search {
+  /* the field never collapses: the spacers either side will starve a shrinkable item once the bar
+     is crowded, and a zero-width search box is worse than a bar that scrolls */
   flex: 0 0 auto;
 }
 .search input {
-  width: 260px;
-}
-.filter-spacer {
-  flex: 1 1 auto;
+  /* scales with the viewport so the field, not the board title, gives way in a crowded bar */
+  width: clamp(130px, 17vw, 220px);
 }
 
-/* filter disclosure — the strip stays one line; categories live behind the chevron */
+/* filter disclosure — the categories live behind the chevron */
 .filter-toggle {
   display: inline-flex;
   align-items: center;
@@ -454,12 +457,15 @@ html[data-highlight-priority='1'] .card[data-prio='3'] {
   display: none;
 }
 
-/* the pane floats over the board rather than pushing it down — the design rejects shadows, so the
-   floating read comes from an opaque ink surface and a stronger border than the strip's */
+/* The pane floats over the board rather than pushing it down — the design rejects shadows, so the
+   floating read comes from an opaque ink surface and a border stronger than the bar's. Positioned
+   from the trigger's rect in JS (see positionFilterPanel): the navbar scrolls, so an absolutely
+   positioned popover inside it would be clipped by the bar's own overflow, and being fixed lets the
+   pane be clamped to the viewport when the trigger sits near the right edge. */
 .filter-panel {
-  position: absolute;
-  top: 100%;
-  left: 12px;
+  position: fixed;
+  top: 0;
+  left: 0;
   z-index: 40;
   display: flex;
   flex-direction: column;
@@ -498,7 +504,8 @@ html[data-highlight-priority='1'] .card[data-prio='3'] {
   padding-top: 8px;
 }
 
-/* priority legend — documents the rail on the top edge of each card */
+/* priority legend — documents the rail on the top edge of each card. It sits in the read-out row
+   with no divider of its own: the row is not a toolbar and nothing in it should read as a control. */
 .prio-legend {
   display: flex;
   align-items: center;
@@ -507,14 +514,12 @@ html[data-highlight-priority='1'] .card[data-prio='3'] {
   font-size: 9px;
   letter-spacing: 0.1em;
   color: var(--color-foreground-secondary);
-  padding-left: 10px;
-  border-left: 1px solid var(--line);
 }
 .prio-legend[hidden] {
   display: none;
 }
 .prio-legend-label {
-  color: var(--color-foreground-muted);
+  color: var(--color-foreground-secondary);
 }
 .prio-key {
   display: inline-flex;
@@ -951,11 +956,11 @@ html[data-deps-mode='1'] .card[data-deps='both'] {
 .deps-indicator {
   display: inline-flex;
   align-items: center;
-  border: 1px solid var(--line);
-  padding: 2px 6px;
   font-size: 10px;
   letter-spacing: 0.08em;
-  color: var(--color-foreground-muted);
+  /* secondary, not muted: this is the only place the overlay's hotkey is taught, and muted grey on
+     the page background measured 4.17:1 at 10px — under AA for the app's headline feature */
+  color: var(--color-foreground-secondary);
   white-space: nowrap;
 }
 .deps-on {
@@ -997,6 +1002,10 @@ dialog::backdrop {
   border-top: 0;
   border-bottom: 0;
   border-right: 0;
+  /* the sidebar is the page's own material, per the user's call — its edge is the 1px rule and the
+     dimmed backdrop behind it, not a different fill. Modals keep the ink surface: they appear over
+     the board rather than beside it. */
+  background: var(--color-background);
   animation: drawer-in 180ms var(--ease-out);
 }
 .drawer:not([open]) {

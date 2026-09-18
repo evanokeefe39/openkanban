@@ -942,9 +942,30 @@
     $('btn-reset').disabled = all.length === 0;
   }
 
+  /**
+   * The pane is fixed-positioned and placed from the trigger's rect: the navbar scrolls, so an
+   * absolutely-positioned popover inside it would be clipped. Clamped to the viewport, since the
+   * trigger can sit near the right edge on a narrow window.
+   */
+  function positionFilterPanel() {
+    const panel = $('filter-panel');
+    if (panel.hidden) return;
+    const trigger = $('filter-toggle');
+    const rect = trigger.getBoundingClientRect();
+    const width = panel.offsetWidth;
+    const margin = 12;
+    const left = Math.max(margin, Math.min(rect.left, window.innerWidth - width - margin));
+    panel.style.left = `${Math.round(left)}px`;
+    panel.style.top = `${Math.round(rect.bottom + 6)}px`;
+  }
+
   function renderFilters() {
     const count = activeFilterCount();
-    $('filter-toggle').setAttribute('aria-expanded', ui.filterOpen ? 'true' : 'false');
+    const toggle = $('filter-toggle');
+    toggle.setAttribute('aria-expanded', ui.filterOpen ? 'true' : 'false');
+    // the button is icon-only, so the active count has to be spoken: the badge itself is inside the
+    // element the label overrides
+    toggle.setAttribute('aria-label', count ? `Filter cards, ${count} active` : 'Filter cards');
     const badge = $('filter-count');
     badge.textContent = String(count);
     badge.hidden = count === 0;
@@ -953,7 +974,11 @@
     if (document.activeElement !== queryInput && queryInput.value !== ui.query) {
       queryInput.value = ui.query;
     }
-    if (ui.filterOpen) renderFilterPanel();
+    if (ui.filterOpen) {
+      renderFilterPanel();
+      // rendered before measuring: the pane's own width depends on its content
+      positionFilterPanel();
+    }
   }
 
   function filterGroup(name) {
@@ -1657,10 +1682,12 @@
   function doResetBoard() {
     if (!resetArmed()) return;
     const removed = Object.keys(board.cards).length;
-    // nothing may keep pointing at a card that no longer exists
+    // nothing may keep pointing at a card that no longer exists — and a half-typed card title is
+    // pending work that the wipe should end rather than leave sitting in an emptied column
     ui.activeCardId = null;
     ui.dragId = null;
     ui.chainId = null;
+    ui.inlineAdd = null;
     commit(() => {
       board.cards = {};
       // numbering restarts with the empty board. The invariant is that a number is never reused
@@ -2136,6 +2163,11 @@
       $('confirm-dialog').close();
       if (action) action();
     });
+
+    // the pane is anchored to the trigger, so it follows the bar when the bar scrolls or the window
+    // resizes — both of which move the trigger without closing the pane
+    window.addEventListener("resize", positionFilterPanel);
+    document.querySelector(".topbar").addEventListener("scroll", positionFilterPanel, { passive: true });
 
     // reset dialog: the confirm button is armed by the word, not by a second click
     $('btn-reset').addEventListener('click', openResetDialog);

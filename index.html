@@ -27,6 +27,33 @@
         <h1 class="board-name" id="board-name">&mdash;</h1>
         <p class="counters" id="counters"></p>
         <span class="spacer"></span>
+        <label class="search">
+          <span class="visually-hidden">Search cards</span>
+          <input
+            class="input"
+            type="search"
+            id="filter-query"
+            placeholder="SEARCH TITLE / NOTES / LABEL"
+            autocomplete="off"
+            spellcheck="false"
+          />
+        </label>
+        <button
+          class="btn filter-toggle"
+          id="filter-toggle"
+          type="button"
+          aria-expanded="false"
+          aria-controls="filter-panel"
+          aria-label="Filter cards"
+          title="Filter cards by label, priority, blocked state or due date"
+        >
+          <svg class="icon lucide-filter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 20a1 1 0 0 0 .553.895l2 1A1 1 0 0 0 14 21v-7a2 2 0 0 1 .517-1.341L21.74 4.67A1 1 0 0 0 21 3H3a1 1 0 0 0-.742 1.67l7.225 7.989A2 2 0 0 1 10 14z"/></svg>
+          <span class="filter-count" id="filter-count" hidden>0</span>
+          <svg class="chev" viewBox="0 0 10 6" aria-hidden="true">
+            <path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" />
+          </svg>
+        </button>
+        <span class="spacer"></span>
         <span class="lamp" id="storage-lamp" title="storage status">
           <span class="lamp-dot" aria-hidden="true"></span>
           <span id="storage-lamp-text">READY</span>
@@ -37,57 +64,34 @@
         <button class="btn danger" id="btn-reset" type="button" title="Delete every card on this board"><svg class="icon lucide-trash-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>RESET</button>
       </header>
 
-      <section class="filters" aria-label="Filters">
-        <div class="filter-strip">
-          <label class="search">
-            <span class="visually-hidden">Search cards</span>
-            <input
-              class="input"
-              type="search"
-              id="filter-query"
-              placeholder="SEARCH TITLE / NOTES / LABEL"
-              autocomplete="off"
-              spellcheck="false"
-            />
-          </label>
-          <button
-            class="btn filter-toggle"
-            id="filter-toggle"
-            type="button"
-            aria-expanded="false"
-            aria-controls="filter-panel"
-            title="Show filter categories"
-          >
-            <svg class="icon lucide-filter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 20a1 1 0 0 0 .553.895l2 1A1 1 0 0 0 14 21v-7a2 2 0 0 1 .517-1.341L21.74 4.67A1 1 0 0 0 21 3H3a1 1 0 0 0-.742 1.67l7.225 7.989A2 2 0 0 1 10 14z"/></svg>
-            FILTERS
-            <span class="filter-count" id="filter-count" hidden>0</span>
-            <svg class="chev" viewBox="0 0 10 6" aria-hidden="true">
-              <path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" />
-            </svg>
-          </button>
-          <span class="filter-spacer"></span>
-          <span
-            class="deps-indicator"
-            id="deps-indicator"
-            title="Hold the D key to show every dependency edge at once: amber cards are waiting on something, indigo cards hold something up, and each card lists the numbers it is wired to"
-          >
-            <span class="deps-keys">HOLD D — DEPENDENCIES</span>
-            <span class="deps-on">SHOWING DEPENDENCIES</span>
-          </span>
-          <span
-            class="prio-legend"
-            id="prio-legend"
-            title="Card priority — the bar on the top edge of a card"
-          >
-            <span class="prio-legend-label">PRIORITY</span>
-            <span class="prio-key" data-prio="1"><i class="prio-swatch"></i>P0</span>
-            <span class="prio-key" data-prio="2"><i class="prio-swatch"></i>P1</span>
-            <span class="prio-key" data-prio="3"><i class="prio-swatch"></i>P2</span>
-            <span class="prio-key" data-prio="0"><i class="prio-swatch"></i>NONE</span>
-          </span>
-        </div>
-        <div class="filter-panel" id="filter-panel" hidden></div>
-      </section>
+      <!-- Read-outs rather than controls: the overlay's hotkey and the priority key. They sit under
+           the bar with no border and no fill of their own, so nothing here competes with the board. -->
+      <div class="status-row">
+        <span
+          class="deps-indicator"
+          id="deps-indicator"
+          title="Hold the D key to show every dependency edge at once: amber cards are waiting on something, indigo cards hold something up, and each card lists the numbers it is wired to"
+        >
+          <span class="deps-keys">HOLD D — DEPENDENCIES</span>
+          <span class="deps-on">SHOWING DEPENDENCIES</span>
+        </span>
+        <span class="spacer"></span>
+        <span
+          class="prio-legend"
+          id="prio-legend"
+          title="Card priority — the bar on the top edge of a card"
+        >
+          <span class="prio-legend-label">PRIORITY</span>
+          <span class="prio-key" data-prio="1"><i class="prio-swatch"></i>P0</span>
+          <span class="prio-key" data-prio="2"><i class="prio-swatch"></i>P1</span>
+          <span class="prio-key" data-prio="3"><i class="prio-swatch"></i>P2</span>
+          <span class="prio-key" data-prio="0"><i class="prio-swatch"></i>NONE</span>
+        </span>
+      </div>
+
+      <!-- The filter popover is positioned from its trigger's rect and sits outside the topbar:
+           the bar scrolls horizontally when it is crowded, and a scrolling ancestor would clip it. -->
+      <div class="filter-panel" id="filter-panel" hidden></div>
 
       <main class="board" id="board" aria-label="Kanban board"></main>
     </div>

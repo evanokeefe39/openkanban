@@ -199,14 +199,15 @@ async function run() {
     const overridden = await page.evaluate(() => {
       const card = document.querySelector('.card[data-card-id="c-cycle"]');
       return {
-        inProgress: !!card.closest('.column[data-column-id="col-progress"]'),
-        override: card.textContent.includes("OVERRIDE"),
-        stillBlocked: card.dataset.blocked,
+        found: !!card,
+        inProgress: !!(card && card.closest('.column[data-column-id="col-progress"]')),
+        override: !!(card && card.textContent.includes("OVERRIDE")),
+        stillBlocked: card ? card.dataset.blocked : null,
       };
     });
     check(
       "confirming the override moves the card and keeps it flagged",
-      overridden.inProgress && overridden.override && overridden.stillBlocked === "1",
+      overridden.found && overridden.inProgress && overridden.override && overridden.stillBlocked === "1",
       JSON.stringify(overridden)
     );
 
@@ -233,23 +234,40 @@ async function run() {
       const waiting = document.querySelector('.card[data-card-id="c-cycle"]');
       const holding = document.querySelector('.card[data-card-id="c-graph"]');
       return {
+        bothPresent: !!(waiting && holding),
         waitRings: document.querySelectorAll('#board .card[data-deps="waits"]').length,
         holdRings: document.querySelectorAll('#board .card[data-deps="holds"]').length,
-        waitRefs: waiting.querySelector(".card-refs").textContent.replace(/\s+/g, " ").trim(),
-        holdRefs: holding.querySelector(".card-refs").textContent.replace(/\s+/g, " ").trim(),
+        waitRefs: waiting ? waiting.querySelector(".card-refs").textContent.replace(/\s+/g, " ").trim() : "",
+        holdRefs: holding ? holding.querySelector(".card-refs").textContent.replace(/\s+/g, " ").trim() : "",
+        refsHidden: [...document.querySelectorAll(".card-refs")].every((r) => getComputedStyle(r).display === "none"),
       };
     });
     await page.keyboard.up("d");
     await page.waitForFunction(() => document.documentElement.dataset.depsMode === "0");
-    const cleared = await page.evaluate(() => document.querySelectorAll("#board .card[data-deps]").length);
+    // the hover chain paints the same ring attributes, so park the pointer away from the board
+    // before asserting the resting state: clicks have been moving the real mouse around
+    await page.mouse.move(0, 0);
+    await page.waitForFunction(() => document.querySelectorAll("#board .card[data-deps]").length === 0, null, { timeout: 5000 }).catch(() => {});
+    const cleared = await page.evaluate(() => ({
+      rings: document.querySelectorAll("#board .card[data-deps]").length,
+      refsShown: [...document.querySelectorAll(".card-refs")].filter((r) => getComputedStyle(r).display !== "none").length,
+    }));
     check(
       "holding D shows each card's wiring, releasing clears it",
-      wiring.waitRings > 0 && wiring.holdRings > 0 && /← #\d/.test(wiring.waitRefs) && /→ #\d/.test(wiring.holdRefs) && cleared === 0,
+      wiring.bothPresent &&
+        wiring.waitRings > 0 &&
+        wiring.holdRings > 0 &&
+        /← #\d/.test(wiring.waitRefs) &&
+        /→ #\d/.test(wiring.holdRefs) &&
+        !wiring.refsHidden &&
+        cleared.rings === 0 &&
+        cleared.refsShown === 0,
       JSON.stringify({ ...wiring, cleared })
     );
 
     // 8 — the filter pane filters, and closes the way a popover should
     await freshBoard(page, server.base);
+    const blockedOnBoard = await page.evaluate(() => document.querySelectorAll('#board .card[data-blocked="1"]').length);
     await page.click("#filter-toggle");
     await page.waitForFunction(() => document.getElementById("filter-panel").hidden === false);
     await page.click('#filter-panel button[data-filter-key="status:blocked"]');
@@ -260,9 +278,9 @@ async function run() {
       stillOpen: document.getElementById("filter-panel").hidden === false,
     }));
     check(
-      "a filter chip filters the board and keeps the pane open",
-      filtered.cards === 4 && filtered.hidden === 0 && filtered.badge === "1" && filtered.stillOpen,
-      JSON.stringify(filtered)
+      "a filter chip shows exactly the blocked cards and keeps the pane open",
+      blockedOnBoard > 0 && filtered.cards === blockedOnBoard && filtered.hidden === 0 && filtered.badge === "1" && filtered.stillOpen,
+      JSON.stringify({ ...filtered, blockedOnBoard })
     );
     await page.click("#filter-query");
     await page.keyboard.press("Escape");
@@ -274,7 +292,7 @@ async function run() {
     }));
     check(
       "Escape closes the pane and leaves the filter applied",
-      escaped.cards === 4 && escaped.badge === "1" && escaped.expanded === "false",
+      escaped.cards === blockedOnBoard && escaped.badge === "1" && escaped.expanded === "false",
       JSON.stringify(escaped)
     );
 
@@ -325,7 +343,6 @@ async function run() {
     );
 
     // 11 — reset is gated on the word, then leaves an empty board that stays empty
-    const before = await counts(page);
     await page.click("#btn-reset");
     await page.waitForFunction(() => document.getElementById("reset-dialog").open === true);
     const dialogText = await page.textContent("#reset-summary");
@@ -338,19 +355,49 @@ async function run() {
       partialArmed === false && armed === true && /all 11 cards/.test(dialogText),
       JSON.stringify({ partialArmed, armed, dialogText })
     );
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => document.getElementById("reset-dialog").open === false);
 
+    // a half-typed card is pending work: the wipe must take it with the cards rather than leave it
+    // sitting in an emptied column (it did, until this was asserted)
+    await page.click('[data-column-id="col-backlog"] [data-add-to]');
+    await page.fill(".add-form textarea", "half typed title");
+    await page.click("#btn-reset");
+    await page.waitForFunction(() => document.getElementById("reset-dialog").open === true);
+    await page.type("#reset-word", "delete");
     await page.click("#reset-ok");
     await page.waitForFunction(() => document.querySelectorAll("#board .card").length === 0);
-    const afterReset = await page.evaluate(() => ({
-      columns: document.querySelectorAll(".column").length,
-      name: document.getElementById("board-name").textContent,
-      disabled: document.getElementById("btn-reset").disabled,
-      plates: document.querySelectorAll(".plate-action").length,
-      stored: Object.keys(JSON.parse(localStorage.getItem("openkanban.board.v1")).cards).length,
-    }));
+    const composer = await page.evaluate(() => {
+      const textarea = document.querySelector(".add-form textarea");
+      return { open: !!textarea, value: textarea ? textarea.value : null };
+    });
     check(
-      "reset deletes every card and keeps the columns",
-      afterReset.columns === 5 && afterReset.plates === 5 && afterReset.stored === 0 && afterReset.disabled === true && afterReset.name.length > 1,
+      "reset takes a half-typed card with it",
+      composer.open === false && composer.value === null,
+      JSON.stringify(composer)
+    );
+
+    const afterReset = await page.evaluate(() => {
+      const stored = JSON.parse(localStorage.getItem("openkanban.board.v1"));
+      return {
+        columns: document.querySelectorAll(".column").length,
+        storedColumns: stored.columns.length,
+        storedName: stored.name,
+        cards: Object.keys(stored.cards).length,
+        nextNumber: stored.nextNumber,
+        disabled: document.getElementById("btn-reset").disabled,
+        plates: document.querySelectorAll(".plate-action").length,
+      };
+    });
+    check(
+      "reset deletes every card and keeps the columns, in the file as well as the view",
+      afterReset.columns === 5 &&
+        afterReset.storedColumns === 5 &&
+        afterReset.cards === 0 &&
+        afterReset.nextNumber === 1 &&
+        afterReset.storedName.length > 1 &&
+        afterReset.plates === 5 &&
+        afterReset.disabled === true,
       JSON.stringify(afterReset)
     );
 
