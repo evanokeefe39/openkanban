@@ -83,11 +83,14 @@ export function createCtx(session) {
     // ---- interaction --------------------------------------------------------
     /** Click a card's body at its centre — the whole card is the hit area. */
     clickCard: async (id) => {
-      await page.evaluate((cardId) => {
-        const node = document.querySelector(`.card[data-card-id="${cardId}"]`);
-        if (!node) throw new Error(`no card ${cardId}`);
-        node.scrollIntoView({ block: "nearest" });
-      }, id);
+      // Playwright's own scroller, because the app-level `scrollIntoView({block:
+      // 'nearest'})` this used to call only guaranteed the vertical axis: at a
+      // narrow viewport the board scrolls horizontally too, and a card sitting
+      // off-screen to the left made the coordinate click below land on nothing.
+      // The visual module's selection state hit exactly that at 375px — the
+      // clicks did nothing, both apps compared two identical non-events, and the
+      // row passed for a reason that had nothing to do with the apps agreeing.
+      await page.locator(sel.card(id)).scrollIntoViewIfNeeded();
       const box = await page.locator(sel.cardMain(id)).boundingBox();
       if (!box) throw new Error(`card ${id} is not in the layout`);
       await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);

@@ -25,7 +25,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import * as H from "./harness.mjs";
-import { KNOWN } from "./dom.mjs";
+import { KNOWN, sel } from "./dom.mjs";
 
 const VIEWPORTS = [
   { id: "375", width: 375, height: 900 },
@@ -54,6 +54,14 @@ const STATES = [
     prepare: async (ctx) => {
       await ctx.freshBoard();
     },
+    // Each state asserts that it actually established itself. Without this, a
+    // preparation that silently fails on both apps compares two identical
+    // non-events and reports a pass — which is what the selection state was
+    // doing at 375px, where the coordinates it clicked landed on nothing.
+    verify: async (ctx) => {
+      const cards = await ctx.count(sel.cards);
+      return { ok: cards === 11, detail: `${cards} cards rendered, expected 11` };
+    },
   },
   {
     id: "chain",
@@ -69,6 +77,10 @@ const STATES = [
       );
       await ctx.waitFrames();
     },
+    verify: async (ctx) => {
+      const caned = await ctx.count(sel.cardsWithChain);
+      return { ok: caned > 0, detail: `no card carries data-chain, so the read-out never opened` };
+    },
   },
   {
     id: "selection",
@@ -77,10 +89,23 @@ const STATES = [
       await ctx.freshBoard();
       await ctx.hold("Control");
       await ctx.waitFor(() => document.documentElement.dataset.selectMode === "1");
-      await ctx.clickCard(KNOWN.blockedBatchMember);
-      await ctx.clickCard(KNOWN.unblockedBatchMember);
+      // These two, not the batch members: at 375px the board's columns are
+      // centred inside a horizontally-scrolling container, so the leftmost
+      // columns sit at a negative x that no scroll can reach — `scrollLeft`
+      // cannot go below zero. The batch members live in the first two columns and
+      // are simply unclickable there, so the state could never be established on
+      // either side. Both of these are in the third column (reachable at every
+      // viewport) and one is blocked while the other is not, which is the visual
+      // contrast the row is for. See ISSUES.md for the defect itself.
+      await ctx.clickCard(KNOWN.bothWays);
+      await ctx.clickCard("c-export");
       await ctx.waitFor(() => document.getElementById("selection-bar").hidden === false);
       await ctx.waitFrames();
+    },
+    verify: async (ctx) => {
+      const picked = await ctx.count(sel.cardsPicked);
+      const bar = await ctx.page.evaluate(() => document.getElementById("selection-bar").hidden);
+      return { ok: picked >= 2 && bar === false, detail: `${picked} card(s) ticked, bar hidden=${bar}` };
     },
   },
 ];
@@ -204,6 +229,26 @@ export async function compareViews(browser, { vanilla, react, vCtx, rCtx }) {
           await state.prepare(rCtx);
           await vCtx.waitFrames();
           await rCtx.waitFrames();
+
+          // Both sides must be in the state the row claims, or the comparison is
+          // between two screenshots of something else.
+          const established = [
+            { side: "vanilla", verdict: await state.verify(vCtx) },
+            { side: "react", verdict: await state.verify(rCtx) },
+          ];
+          const notEstablished = established.filter((entry) => !entry.verdict.ok);
+          if (notEstablished.length) {
+            rows.push({
+              id,
+              name,
+              status: "fail",
+              detail: `the state was not established, so there is nothing to compare — ${notEstablished
+                .map((entry) => `${entry.side}: ${entry.verdict.detail}`)
+                .join("; ")}`,
+              ms: Date.now() - rowStarted,
+            });
+            continue;
+          }
 
           const fonts = [await fontLoaded(vanilla.page), await fontLoaded(react.page)];
           if (!fonts[0].jetbrains || !fonts[1].jetbrains) {

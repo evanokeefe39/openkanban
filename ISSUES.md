@@ -203,6 +203,36 @@ fill, the same rule. The fix is the same one the sweep applied, moving these thr
 `--color-foreground-secondary` (`#9ca3af`, 7.93:1). Carried as `i-colour-05` in the declared-defect
 register.
 
+**Two columns are unreachable at a 375px viewport.** Found 2026-09-18 while verifying the visual
+comparison, by measuring rather than looking, and not fixed for the same reason as the others —
+`styles.css` is frozen as the port's reference.
+
+The board centres its columns inside a horizontally-scrolling container. That is correct while the
+track fits, and it breaks the moment it does not: with five ~280px columns in a 375px viewport the
+content overflows to both sides, and `#board`'s `scrollLeft` cannot go below zero, so the overflow on
+the left is unreachable. Measured at 375: `#board.scrollLeft` is 0 while the first column's
+`getBoundingClientRect().x` is **−498** and a card inside it is at −489, and `document.elementFromPoint`
+at that card's centre returns nothing. The first two columns cannot be scrolled to, clicked, or read.
+
+This is why it survived: the board *looks* fine, because the visible columns are the middle ones, and
+every check in the suite drove the board at 1440 where the centring is exactly right. It surfaced only
+because a state that had to click a card at 375 could not establish itself, and the state's own
+verification caught it rather than passing vacuously.
+
+Confirmed as layout rather than a measurement artifact, because that was the competing explanation and
+a geometry read taken before a relayout would look identical: a context created at 375 and a context
+resized from 1440 down to 375 produce the same numbers to the pixel (`firstColumnX` −498 at
+`scrollLeft` 0; board `scrollWidth` 886 against `clientWidth` 375), and sweeping the entire scroll
+range in 10px steps finds no position where the first column reaches x ≥ 0 — scrolling right only
+moves it further away, to −1009. Note also that the board's own `scrollWidth` (886) is far short of the
+track's real width (~1400), because overflow to the left is not counted at all: roughly 890px of the
+board is outside its own scroll range.
+
+The fix is safe centring — `justify-content: safe center` (or applying the auto margin only while the
+track fits) — which keeps the centred board at 1440 and falls back to start alignment when the content
+overflows. It belongs in the port's stylesheet with the other two, and it is the third defect carried
+on the vanilla target only.
+
 ## Known limitations
 
 Real, accepted, and worth knowing before someone reports them as new.
