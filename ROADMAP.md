@@ -2,6 +2,21 @@
 
 Ordered by preference, not by size. Nothing here is started unless stated.
 
+## In progress
+
+### Port to React + Next.js
+
+See [`tasks/plans/next-react-port.md`](tasks/plans/next-react-port.md) for the kickoff plan — phases,
+packages, invariants and risks.
+
+A behaviour-preserving port to React 19 / Next.js 16, with a Tailwind theme carrying the existing
+design tokens, Zustand for the board and view stores, and dnd-kit replacing the hand-rolled HTML5
+drag. Static export, because there is no server in this product and there never will be: no accounts,
+no collaboration, no central database, and a board stays in the browser that made it.
+
+This reverses the rejection recorded at the bottom of this file. That analysis was not wrong — the
+reversal is a direction decision, and the entry is kept so it is not re-derived.
+
 ## Next
 
 ### Undo / redo — `Ctrl+Z` / `Ctrl+Shift+Z`
@@ -87,36 +102,41 @@ design pass rather than a bolt-on.
 
 Recorded so these do not get re-litigated from scratch.
 
-### A Next.js / React rewrite
+### A Next.js / React rewrite — **reversed, now in progress**
 
-Assessed and declined. The two stated motives both dissolve on inspection:
+Assessed and declined, and since reversed by an explicit direction decision. The original analysis is
+kept because its conclusions still hold and should not be re-derived:
 
-- **Undo/redo does not need React** — see above; the commit funnel already exists, and the React
-  history packages solve a many-reducer state problem this app does not have.
-- **Vercel does not need Next.js here** — `vercel.json` is the complete deployment config and the
-  deploy is "preset Other, empty build command". The app already works.
+- **Undo/redo does not need React** — the commit funnel already exists, and the React history packages
+  solve a many-reducer state problem this app does not have.
+- **Vercel does not need Next.js here** — `vercel.json` was the complete deployment config and the
+  vanilla deploy already worked.
+- **Next.js buys nothing server-side.** There is nothing to server-render in a `localStorage` app,
+  routing is twenty lines of History API, and the one server-shaped ambition on this roadmap — the
+  npx/MCP package — is a plain Node process, not Next.
+- **A Tailwind conversion** remains answerable only on one condition: the `:root` tokens move into
+  `@theme` one for one, rather than being retyped as utility classes. That condition is written into
+  the plan.
 
-The costs are concrete: roughly 2–4 focused days (more than the original build took), a build step
-added to a project whose selling point is having none, SSR hazards introduced to code that is entirely
-`localStorage`-driven, and a 594-line browser test suite that would have to be re-validated wholesale
-because it depends on the DOM contract. The one genuine win — routing for multiple boards — is twenty
-lines of History API.
+What the port does buy, and what made it worth doing anyway: a component model, types on a
+graph-shaped data model, pure logic that can be unit-tested outside a browser, and — the concrete
+win — a pointer-based drag library, which makes the drag gesture testable where HTML5 drag and drop
+cannot be.
 
-Revisit only if: the board grows past a few hundred cards and the full re-render becomes visibly
-janky; several simultaneous boards share enough state to make two globals unmanageable; or a
-component library becomes a requirement.
+The costs were accepted knowingly and are recorded in the plan: a build step added to a project whose
+selling point is having none, the documented `file://` property lost, SSR hydration hazards
+introduced around `localStorage`, and a browser suite that asserts the DOM contract and must be
+re-validated check by check.
 
-### A Tailwind conversion
-
-The `:root` tokens encode measured colour decisions — the dependency-overlay contrast fix, the navy
-sweep, the amber-means-warning rule — and `tests/check-styles.mjs` exists to police the `var()`
-contract. Utility classes would obscure both and delete a real guard.
+See [`tasks/plans/next-react-port.md`](tasks/plans/next-react-port.md).
 
 ### Replacing the native HTML5 drag and drop
 
-It is about 65 lines, works, has a keyboard alternative via the drawer's MOVE TO row, and already
-routes group drops through the same gate. A library would add a dependency, a new mental model, and
-new edge cases for a feature that is not currently costing anything.
+Reversed as part of the port, where dnd-kit replaces it. The original reasoning — about 65 lines, it
+works, it has a keyboard alternative via the drawer's MOVE TO row, and it already routes group drops
+through the same gate — is all still true. The case for replacing it was never that the code was hard
+to write. It was testability: Playwright cannot synthesise an HTML5 `drop`, so the drag gesture is the
+one thing the browser suite cannot verify, and pointer events can be synthesised.
 
 ### Storing `blocked` / `override` on the card
 
