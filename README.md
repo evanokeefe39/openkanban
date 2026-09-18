@@ -1,5 +1,7 @@
 # OpenKanban
 
+[![CI](https://github.com/evanokeefe39/openkanban/actions/workflows/ci.yml/badge.svg)](https://github.com/evanokeefe39/openkanban/actions/workflows/ci.yml)
+
 A kanban board where dependencies are part of the data model: a card knows what blocks it, the board refuses to let you forget, and holding one key shows you the whole wiring.
 
 I wanted a simple kanban with dependency tracking, could not find one in a few minutes of looking, and built this instead. The first working version took about an hour. It is three static files with no build step, no dependencies and no server, so it runs from a folder on your laptop exactly as it runs from a URL.
@@ -14,7 +16,7 @@ Most boards treat a dependency as a note you write in a card. Here it is an edge
 - **A card is blocked while any blocker sits outside a DONE column.** Retiring a blocker is what unblocks its dependents — there is no second thing to remember to tick.
 - **Gated columns warn before they let you through.** Moving a blocked card into a gated column explains exactly what is still unfinished and records an override — visible as an `OVERRIDE` chip, derived from the graph rather than stored as a flag.
 - **Cycles are refused at the point of adding the edge**, with the path that would close, rather than at some later render where the cause is gone.
-- **Hold `D` to see the wiring.** Every card grows a coloured ring (amber: waiting on something; violet: holding something up) and a row of numbers — `← #4` blocked by 4, `→ #6` blocks 6. Release and the board goes quiet again.
+- **Hold `D` to see the wiring.** Every card in the hovered card's chain grows a border, and the card itself shows a row of numbered references — `← #4` blocked by 4, `→ #6` blocks 6. A **red candy cane** marks what the hovered card blocks; a **solid white line**, inset a step inside it, marks what blocks it. A card that does both carries both, which is the one case you can read at a glance. Release and the board goes quiet again.
 
 ![Holding D: rings and numbered references show the dependency graph in place](docs/screenshots/dependencies.webp)
 
@@ -47,19 +49,22 @@ Open `index.html`. That is the whole story — the app is designed to work from 
 If you would rather serve it (which is how it runs in CI):
 
 ```sh
-python3 -m http.server 8080 --bind 127.0.0.1
-# then open http://127.0.0.1:8080
+npm run serve     # http://127.0.0.1:8080, no-cache
 ```
+
+Use that rather than `python -m http.server`. Python's server sends `Last-Modified` with no `Cache-Control`, so Chromium applies heuristic freshness and will happily serve you the *previous* document after an edit — which looks exactly like a CSS bug and is not one. [`tools/serve.mjs`](tools/serve.mjs) sends `Cache-Control: no-store` and costs nothing to run. The whole story is in [`LEARNINGS.md`](LEARNINGS.md).
 
 ### Keyboard
 
 | Key | Does |
 | --- | --- |
-| Hold `D` | Show the dependency overlay: rings plus `← #n` / `→ #n` references |
+| Hold `D` | Show the dependency overlay: borders plus `← #n` / `→ #n` references, shaded by direction |
+| `C` | Add a card to the first column |
+| Hold `Ctrl` | Reveal the card ticks. Click cards to pick them, then drag any one of them to move the group |
 | `Enter` | Add the card you are composing (in the inline composer or the drawer's label/blocker fields) |
 | `Escape` | Close the popover, a dialog, or a drawer |
 
-The `MOVE TO` row in the card drawer is the keyboard path for moving a card, and it goes through the same gate as dragging.
+The `MOVE TO` row in the card drawer is the keyboard path for moving a card, and it goes through the same gate as dragging. So does a group drag: a batch that contains blocked cards warns once, naming each of them, before it moves.
 
 ## Where your data lives
 
@@ -92,7 +97,7 @@ The app has no build, so a green build would prove nothing. The gate drives the 
 ```sh
 npm ci
 npx playwright install chromium
-npm test          # 19 checks, ~15s
+npm test          # 31 checks, ~10s
 npm run check     # syntax check, plus every var() in the CSS must resolve
 ```
 
@@ -108,23 +113,7 @@ Any static host works, because there is nothing to build. On Vercel: import the 
 
 ## Roadmap
 
-Post-MVP, in rough order of preference — none of it started.
-
-**Multiple boards.** Still localStorage, no accounts: a board picker, each board its own key, and a
-way to move one between machines (export/import already exists, so this is mostly a switcher and a
-key scheme). Hosting on Vercel already gives each visitor their own boards for free, since the state
-is local — so a shared URL is a shared *app*, not a shared board, which is the useful property for
-the near-term.
-
-**An `npx` package with a local server and CLI.** The same client, served by a local process, with a
-CLI and an MCP server so an agent can read and write the board. That turns the board into something
-an agent can *use* — marking work in progress, recording blockers, reporting status — rather than
-something it only renders. The local server is what makes it trustworthy: the data stays on the
-machine, and the agent talks to a real API instead of a browser's storage.
-
-**A dependency-graph view.** Hold-D reads one card's chain at a time; a separate view could lay the
-whole graph out at once. Deliberately deferred: it is a second rendering of the same model, and the
-model is not stable enough to draw yet.
+Undo/redo, multiple boards, and an `npx` package that puts a local server, a CLI and an MCP server in front of the same board so an agent can read and write it rather than only render it — plus what was considered and rejected, and why. See [`ROADMAP.md`](ROADMAP.md).
 
 ## Design notes
 
@@ -144,11 +133,24 @@ styles.css                all of the design language
 app.js                    one IIFE: model, graph, render, storage
 tests/smoke.mjs           the deploy gate, driven through a real browser
 tests/check-styles.mjs    fails the build if a var() has no definition
+tools/serve.mjs           the no-cache dev server
 docs/screenshots/         the images in this README
 tasks/plans/              specification, decisions and verification log
 .github/workflows/ci.yml  runs the gate on every pull request
 vercel.json               cache and security headers for the deploy
 ```
+
+## Working on it
+
+If you are changing the code rather than reading it, start with [`AGENTS.md`](AGENTS.md) — it carries the conventions, the one rule that shapes the data model, and the verification bar.
+
+| Document | Purpose |
+| --- | --- |
+| [`AGENTS.md`](AGENTS.md) | How to work here: architecture, conventions, the commands, the verification bar |
+| [`ROADMAP.md`](ROADMAP.md) | What is planned, and what was considered and rejected |
+| [`ISSUES.md`](ISSUES.md) | Bugs found and fixed, and the limitations that remain |
+| [`LEARNINGS.md`](LEARNINGS.md) | Mistakes already made here, so they are not made twice |
+| [`WATCHDOG.md`](WATCHDOG.md) | Reviewer guidance: what to be suspicious of in this codebase |
 
 ## How this was built
 
