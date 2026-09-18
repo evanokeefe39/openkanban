@@ -232,3 +232,20 @@ Small, cheap, and each one cost a few minutes.
 - **Never PowerShell; never `pip`.** `uv` if Python is ever needed — it currently is not.
 - **`playwright install` fails on some Windows machines.** Run the suite with
   `OK_BROWSER_CHANNEL=msedge`. CI needs no override.
+
+## 14. Two ways a signal passes while telling you nothing
+
+Both of these happened in one session, both looked like success, and neither is caught by a syntax
+check or a green test.
+
+- **A status code is not evidence of what is being served.** Port 3000 answered `200`, and that was
+  reported as this repo's app; it was a different project entirely. `curl -o /dev/null -w
+  '%{http_code}'` proves something is listening, not that it is yours. Read the body — a `<title>`, a
+  `data-port-shell` marker, `id="board"` — before drawing a conclusion from a port being open. The same
+  trap is waiting in every health check in this repo.
+- **A scripted edit whose anchor lacks its trailing newline joins two statements.** An edit anchored on
+  the last line of a function body, without the newline, produced
+  `async function composeBoard(ctx) {  await ctx.freshBoard();`. It parses, so `node --check` and the
+  syntax gate both pass, and the effect would have surfaced as every cross-app check failing for a
+  reason none of them names. Include the newline in the anchor, and read the edited lines back after
+  any scripted edit to a file that matters.
