@@ -213,9 +213,20 @@ Small, cheap, and each one cost a few minutes.
 - **Never push to `main`.** A guard blocks it with no override; this is correct. To create or move a
   remote branch without a local push, use the GitHub API: `gh api -X POST
   repos/OWNER/REPO/git/refs -f ref="refs/heads/main" -f sha="$SHA"`.
-- **The git guard splits on the literal `-m`.** Staging a path in the same command as a commit
-  message can make part of the path be read as the message (`tasks/plans/….md` → `vp.md`). Stage
-  directories, or stage and commit as separate commands.
+- **The git guard reads the whole command for `-m`, not just the commit's own flag.** Its
+  conventional-commits matcher is `/-m\s*(?:'…'|"…"|(\S+))/` over the entire command string, so the
+  *first* `-m` anywhere becomes the "message". Two ways this bites: staging a path in the same command
+  as a commit message (`tasks/plans/….md` → it reads `vp.md`), and — worse — a `-m` inside the
+  *message body itself*. A body mentioning `python -m http.server` was rejected as the message
+  `http.server,`; renaming the message file to avoid that, `git commit -F …/ok-commit-msg.txt` was
+  rejected as `sg.txt`, because `-msg` contains `-m` and `\S+` swallows the rest of the word. Both
+  trips report the rule id `conventional-commits` and echo the captured substring, which is the tell.
+  Until the matcher is anchored to git's argument position, keep `-m` out of commit bodies and out of
+  any path passed alongside `git commit` — and note that `-F` does not exempt the command if the
+  message file's *name* contains `-m`.
+- **A guard message echoing a fragment is not evidence about your message.** Both blocks above looked
+  like "your commit message is malformed"; neither was. Read the echoed text as what the matcher
+  *captured*, not as what you wrote.
 - **The LF→CRLF warning on every commit is expected and benign.** Git's autocrlf is translating; the
   repository content is correct. Do not "fix" it.
 - **Never PowerShell; never `pip`.** `uv` if Python is ever needed — it currently is not.

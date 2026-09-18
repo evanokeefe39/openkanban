@@ -7,7 +7,7 @@ Ordered by preference, not by size. Nothing here is started unless stated.
 ### Undo / redo — `Ctrl+Z` / `Ctrl+Shift+Z`
 
 The most-wanted feature and, on inspection, the cheapest. `commit(mutate)` in `app.js` is already the
-single funnel every document change passes through — 18 call sites, each doing mutate → save →
+single funnel every document change passes through — 16 call sites, each doing mutate → save →
 render. The board is a plain JSON-serialisable object that `saveBoard()` and `exportBoard()` already
 serialise. So the shape is:
 
@@ -108,7 +108,7 @@ component library becomes a requirement.
 
 ### A Tailwind conversion
 
-The `:root` tokens encode measured colour decisions — the dependency-ring contrast fix, the navy
+The `:root` tokens encode measured colour decisions — the dependency-overlay contrast fix, the navy
 sweep, the amber-means-warning rule — and `tests/check-styles.mjs` exists to police the `var()`
 contract. Utility classes would obscure both and delete a real guard.
 

@@ -23,7 +23,15 @@ deleted cards but not `ui.inlineAdd`. Fixed, and the suite asserts the composer 
 graphics, so the wiring was invisible exactly when the fills were loudest. Arrow text was worse at
 1.91:1. Fixed by giving colour a dark step to sit against rather than a louder hue: a separator inside
 every ring, a dark strip behind the arrow row, a lighter indigo. After: 4.5:1 or better on all four
-surfaces, and ring rendering is now identical whether the fills are tinted or not.
+surfaces, and ring rendering identical whether the fills were tinted or not.
+
+The rings were later replaced by the candy cane and the solid white line — see the design notes in
+`README.md` — so the measurements above describe a treatment that no longer exists. The *property* the
+fix established is what the current one is built on, and it is the thing to re-test after any palette
+change: the dependency borders read the same whether the priority fills are on or off, because a
+tinted card carrying either gives up its border to `--line` instead of keeping both. Verified on the
+running app — with the overlay active a tinted card's border resolves to `--line`, and clears back to
+the tint colour when the overlay goes away.
 
 **The inherited navy surface family.** Reported as *"the bg of settings/import/export buttons is still
 that colour"*. The buttons were innocent — all transparent with 1px rules. The navy was the surface

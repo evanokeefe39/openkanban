@@ -18,7 +18,7 @@ Most boards treat a dependency as a note you write in a card. Here it is an edge
 - **Cycles are refused at the point of adding the edge**, with the path that would close, rather than at some later render where the cause is gone.
 - **Hold `D` to see the wiring.** Every card in the hovered card's chain grows a border, and the card itself shows a row of numbered references — `← #4` blocked by 4, `→ #6` blocks 6. A **red candy cane** marks what the hovered card blocks; a **solid white line**, inset a step inside it, marks what blocks it. A card that does both carries both, which is the one case you can read at a glance. Release and the board goes quiet again.
 
-![Holding D: rings and numbered references show the dependency graph in place](docs/screenshots/dependencies.webp)
+![Holding D: a red candy cane on the cards the hovered card blocks, a solid white line on the cards that block it, and numbered references on each](docs/screenshots/dependencies.webp)
 
 The graph is the reason the rest of the app is shaped the way it is. Card numbers exist so the wiring can be *spoken* ("4 blocks 6") instead of restated as titles, and they are handles rather than positions: assigned once, never reused.
 
@@ -121,7 +121,11 @@ The look is lifted from a sibling project's design language: a dark instrument p
 
 The board is two surfaces and one hover. The **page** (`#0a0608`) carries everything that is part of the board: the toolbar, the read-out row, the columns and the filter pane, so those are drawn by their 1px rules rather than by a change of plane. The **card** (`#1f1819`) is warm against it. Only genuinely floating chrome takes a third: **ink** (`#00161c`) for the modals and the toasts, which appear *over* the board rather than beside it. Every hover across the app is one translucent white lift rather than a fourth colour, so a button looks like the same button wherever it is placed.
 
-Colour is rationed, and this is the rule that keeps it legible: **colour is reserved for the priority rail, the blocked/override/due chips, the filter badge, and the dependency overlay** — everything else is ivory or a grey. Where two colour systems have to share a surface (priority fills and dependency rings, for instance) they are separated by a dark step rather than a louder hue, because contrast for a coloured ring is set by what is immediately behind it. That is a measured decision, not a taste one: on the palest priority tint the dependency ring measured 1.28:1 before the fix and 4.5:1 or better after it, with ring rendering identical whether the fills are tinted or not.
+Colour is rationed, and this is the rule that keeps it legible: **colour is reserved for the priority rail, the blocked/override/due chips, the filter badge, and the dependency overlay** — everything else is ivory or a grey. Where two colour systems have to share a surface they are separated by a dark step rather than a louder hue, because the contrast of a border is set by what is immediately behind it.
+
+The dependency overlay is the case that forced the rule. Its two directions are a **candy cane** — two reds alternating, 4.4:1 apart from each other — and a **solid white line**. The striping is the point: a 2px edge made of two colours that differ from *each other* reads as an edge on any fill the priority tint can produce, where a single-colour ring depends on one hue standing out from whatever happens to be behind it. While a card carries either, the tint keeps its fill and gives up its border, so two border systems never compete for the same edge.
+
+That is a measured decision, not a taste one. The white line is 15.4:1 against a plain card and 17.7:1 against the page; the cane's stripes are 4.4:1 against each other; and the numbered references sit on their own dark backing strip rather than on the card fill, which holds them at 5.8:1 or better over every tint. An earlier cut of this overlay was a single 1px indigo ring, which measured 1.28:1 against the palest tint — the kind of number that only turns up when you compute it rather than look at it.
 
 The build's specification, verification log and the numbers behind claims like that live in [`tasks/plans/openkanban-mvp.md`](tasks/plans/openkanban-mvp.md).
 
