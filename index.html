@@ -92,9 +92,9 @@
           <span
             class="row-key"
             id="select-hint"
-            title="Hold Ctrl (or Cmd) and click cards to pick several, then move them together"
+            title="Hold Ctrl and click cards to pick several, then drag any one of them to a column"
           >
-            <kbd class="kbd">CTRL</kbd> SELECT CARDS
+            <kbd class="kbd">CTRL</kbd> CLICK CARDS, DRAG THE GROUP
           </span>
         </span>
         <span class="row-gutter"></span>
@@ -114,12 +114,15 @@
            the bar scrolls horizontally when it is crowded, and a scrolling ancestor would clip it. -->
       <div class="filter-panel" id="filter-panel" hidden></div>
 
-      <!-- Bulk operations, shown only while cards are picked with Ctrl held: the modifier is the
-           mode, so there is nothing to toggle off and nothing left armed when it is released. -->
+      <!-- Bulk operations, shown only while cards are ticked. Positioned as an overlay rather than a
+           grid row: `.app`'s row template is sized for the toolbar, the read-out row and the board,
+           and a fourth in-flow child would push the board onto an implicit `auto` track and stop
+           the columns reaching the bottom. -->
       <div class="selection-bar" id="selection-bar" hidden>
         <span class="selection-count" id="selection-count"></span>
-        <span class="selection-hint">MOVE TO</span>
+        <span class="selection-hint">DRAG THEM TO A COLUMN, OR</span>
         <span class="selection-targets" id="selection-targets"></span>
+        <button class="btn btn-small" id="selection-clear" type="button">CLEAR</button>
       </div>
 
       <main class="board" id="board" aria-label="Kanban board"></main>

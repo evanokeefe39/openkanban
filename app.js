@@ -192,12 +192,14 @@
     due: new Set(),
     filterOpen: false,
     dragId: null,
+    // the ids a current drag carries: one, or the whole ticked set when a ticked card is dragged
+    dragIds: [],
     activeCardId: null,
     inlineAdd: null,
-    // cards picked for a bulk operation, keyed by id so it survives re-renders. Populated only
-    // while ctrl/meta is held: the modifier is what makes a card click a selection rather than an
-    // open, so the set cannot be entered by accident.
+    // cards ticked for a bulk move, keyed by id so the set survives re-renders.
     selection: new Set(),
+    // Ctrl/Cmd held: reveals the ticks and turns a card click into a tick. The selection lives only
+    // while the key is down, so there is no stored mode to leave behind.
     ctrlHeld: false,
     chainId: null,
     depsHeld: false,
@@ -931,6 +933,9 @@
     renderHeader();
     renderFilters();
     renderBoard();
+    // the ticks are rebuilt with the cards, so the ticked set has to be re-applied to them — and
+    // pruned, since a render is also how a deleted card leaves the board
+    applySelection();
     if ($('card-dialog').open) fillCardDialog();
   }
 
@@ -1248,15 +1253,23 @@
   }
 
   /**
-   * Mark the picked cards. Selection is a gesture on top of the board, so it is patched onto the
-   * existing nodes the same way the dependency canes are — a full re-render would drop the
-   * pointer's column scroll and lose the pick the user just made.
+   * Reflect the ticked set on the board. Patched onto the existing nodes rather than re-rendering:
+   * a re-render would drop each column's scroll position and, worse, rebuild the checkbox the user
+   * just clicked out from under the pointer.
    */
   function applySelection() {
+    // a card can be deleted between ticks: prune ids that are no longer on the board, or the bar
+    // would count cards the user cannot see
+    for (const id of [...ui.selection]) if (!card(id)) ui.selection.delete(id);
+    // the ticks are only on screen while Ctrl is held — that is the mode, and its end is what
+    // clears the selection, so nothing is ever left armed
     document.documentElement.dataset.selectMode = ui.ctrlHeld ? '1' : '0';
     for (const node of document.querySelectorAll('#board .card')) {
-      if (ui.selection.has(node.dataset.cardId)) node.dataset.picked = '1';
+      const ticked = ui.selection.has(node.dataset.cardId);
+      if (ticked) node.dataset.picked = '1';
       else node.removeAttribute('data-picked');
+      const box = node.querySelector('.card-tick');
+      if (box) box.checked = ticked;
     }
     const bar = $('selection-bar');
     if (!bar) return;
@@ -1264,7 +1277,7 @@
     bar.hidden = !count;
     if (!count) return;
     $('selection-count').textContent = `${count} SELECTED`;
-    // the targets are the columns themselves, so a bulk move reads as "these cards, into there"
+    // the targets are the columns themselves, so the bar reads as "these cards, into there"
     const targets = $('selection-targets');
     targets.textContent = '';
     for (const column of board.columns) {
@@ -1275,36 +1288,47 @@
     }
   }
 
+  /** Clear the ticked set and the bar. */
+  function clearSelection() {
+    if (!ui.selection.size) return;
+    ui.selection.clear();
+    applySelection();
+  }
+
+  /** The cards to act on: every ticked card, in board order. */
+  function selectedIds() {
+    return board.columns.flatMap((column) => column.cardIds.filter((id) => ui.selection.has(id)));
+  }
+
   /**
-   * Move every picked card into a column, in board order. One commit for the whole move, so the
-   * board is written once and a bulk drag cannot half-apply.
+   * Move every ticked card into a column, in board order, through the same gate a single move uses.
    *
-   * The gate applies to a bulk move exactly as it does to a single one — `attemptMove` is the only
-   * funnel that enforces it, so the blocked members are collected and confirmed ONCE for the batch
-   * (per-card dialogs for a twenty-card drag would be useless), then the move runs. A card that is
-   * not blocked never prompts.
+   * `applyMove` is the only function that relocates a card — ordering, the removal from the old
+   * column and `updatedAt` all live there, so a bulk move reuses it rather than repeating it. The
+   * gate is checked once for the batch: per-card dialogs for a twenty-card move would be useless,
+   * and `askConfirm` holds a single action slot, so a loop of them would clobber each other and
+   * only the last card's confirmation would survive.
    */
   function moveSelectionTo(columnId) {
-    if (!ui.selection.size) return;
+    const ids = selectedIds();
     const to = getColumn(columnId);
-    if (!to) return;
-    const ids = [...ui.selection].filter((id) => card(id));
-    if (!ids.length) return;
+    if (!ids.length || !to) return;
 
-    const apply = (list) => {
+    const apply = () => {
       commit(() => {
-        // applyMove is the single place that removes a card from its old column, orders it in the
-        // new one, and stamps updatedAt — a bulk move reuses it rather than repeating that
-        for (const id of list) applyMove(id, columnId);
+        for (const id of ids) applyMove(id, columnId);
+        // cleared inside the commit so the board and the bar settle in one render
         ui.selection.clear();
       });
       applySelection();
-      toast('info', `MOVED ${list.length} CARD${list.length === 1 ? '' : 'S'} TO ${to.name}`);
+      toast('ok', `MOVED ${ids.length} CARD${ids.length === 1 ? '' : 'S'} TO ${to.name}`);
     };
 
+    // a gated column only prompts for the cards that are actually blocked; a card that is not
+    // blocked never asks
     const blocked = to.gate ? ids.filter((id) => unfinishedBlockers(id).length) : [];
     if (!blocked.length) {
-      apply(ids);
+      apply();
       return;
     }
 
@@ -1313,25 +1337,28 @@
       el(
         'p',
         null,
-        `${blocked.length} of the ${ids.length} selected card${ids.length === 1 ? '' : 's'} ${
+        `${blocked.length} of the ${ids.length} card${ids.length === 1 ? '' : 's'} being moved ${
           blocked.length === 1 ? 'is' : 'are'
         } blocked:`
       )
     );
     const list = el('ul');
-    for (const id of blocked) list.appendChild(el('li', null, card(id).title));
+    for (const id of blocked) {
+      const target = card(id);
+      const column = columnOf(id);
+      list.appendChild(
+        el('li', null, `#${target.number} ${target.title} — ${column ? column.name : 'unplaced'}`)
+      );
+    }
     body.appendChild(list);
     body.appendChild(
-      el('p', null, `Moving them into "${to.name}" records an override; each card stays flagged.`)
+      el('p', null, `They move into "${to.name}" anyway, and stay flagged as overrides.`)
     );
     askConfirm({
       title: 'BLOCKED CARDS → GATED COLUMN',
       body,
       okLabel: 'MOVE ANYWAY',
-      onOk: () => {
-        apply(ids);
-        toast('warn', `OVERRIDE — ${blocked.length} BLOCKED CARD${blocked.length === 1 ? '' : 'S'} IN "${to.name}"`);
-      },
+      onOk: apply,
     });
   }
 
@@ -1351,6 +1378,15 @@
     // needed because one cannot carry two masked rings, and a card can be both a blocker and
     // blocked at once.
     wrapper.appendChild(el('span', 'card-cane'));
+
+    // The tick that puts a card into a bulk move. It sits before the card's own button, so it is
+    // reachable by Tab and does not extend the region that opens the drawer.
+    const tick = el('input', 'card-tick');
+    tick.type = 'checkbox';
+    tick.checked = ui.selection.has(target.id);
+    tick.dataset.tickFor = target.id;
+    tick.setAttribute('aria-label', `Select #${target.number} ${target.title} for a bulk move`);
+    wrapper.appendChild(tick);
 
     const main = el('button', 'card-main');
     main.type = 'button';
@@ -2001,12 +2037,25 @@
     host.addEventListener('dragstart', (event) => {
       const cardEl = event.target.closest('.card');
       if (!cardEl) return;
-      ui.dragId = cardEl.dataset.cardId;
-      cardEl.classList.add('dragging');
+      const id = cardEl.dataset.cardId;
+      // dragging a ticked card carries the whole ticked set: that is the point of ticking them, and
+      // it means the group travels by the gesture the user already knows. Dragging an unticked card
+      // moves that card alone, and drops any ticks so the two cannot be confused.
+      if (ui.selection.has(id)) {
+        ui.dragIds = selectedIds();
+      } else {
+        ui.selection.clear();
+        applySelection();
+        ui.dragIds = [id];
+      }
+      ui.dragId = id;
+      for (const node of host.querySelectorAll('.card[data-picked]')) node.classList.add('dragging');
+      if (!ui.selection.has(id)) cardEl.classList.add('dragging');
       if (event.dataTransfer) {
-        event.dataTransfer.setData('text/plain', ui.dragId);
+        event.dataTransfer.setData('text/plain', ui.dragIds.join(','));
         event.dataTransfer.effectAllowed = 'move';
       }
+      $('selection-count').textContent = `${ui.dragIds.length} SELECTED`;
     });
 
     host.addEventListener('dragover', (event) => {
@@ -2027,16 +2076,23 @@
       if (!ui.dragId) return;
       event.preventDefault();
       const target = dropTargetFrom(event);
-      const dragged = ui.dragId;
+      const group = ui.dragIds && ui.dragIds.length ? ui.dragIds : [ui.dragId];
       ui.dragId = null;
+      ui.dragIds = [];
       clearDropMarkers();
       for (const node of host.querySelectorAll('.dragging')) node.classList.remove('dragging');
       if (!target) return;
-      attemptMove(dragged, target.columnId, target.referenceId, target.where);
+      if (group.length > 1) {
+        // a group drop runs the same gated path as the bulk bar, so it cannot slip past the gate
+        moveSelectionTo(target.columnId);
+        return;
+      }
+      attemptMove(group[0], target.columnId, target.referenceId, target.where);
     });
 
     host.addEventListener('dragend', () => {
       ui.dragId = null;
+      ui.dragIds = [];
       clearDropMarkers();
       for (const node of host.querySelectorAll('.dragging')) node.classList.remove('dragging');
     });
@@ -2076,6 +2132,7 @@
       const button = event.target.closest('[data-move-selection-to]');
       if (button) moveSelectionTo(button.dataset.moveSelectionTo);
     });
+    $('selection-clear').addEventListener('click', clearSelection);
     $('settings-close').addEventListener('click', () => $('settings-dialog').close());
     $('settings-dialog').addEventListener('close', () => flushSettingsFields());
     bindBackdropClose('settings-dialog');
@@ -2138,10 +2195,17 @@
       ui.depsHeld = true;
       applyChainHighlight();
     });
+    document.addEventListener('keyup', (event) => {
+      if (event.key === 'd' || event.key === 'D') releaseDeps();
+    });
+    // alt-tabbing mid-hold must not strand the overlay: the keyup never arrives if the window
+    // loses focus while D is down
+    window.addEventListener('blur', releaseDeps);
+
     /**
-     * Ctrl/Cmd held = pick cards instead of opening them. Releasing it clears the picks: the
-     * selection is a gesture, not a stored mode, so nothing is left armed after the keys are let
-     * go and a stray card cannot be dragged as part of a group the user has forgotten about.
+     * Ctrl/Cmd is the bulk-selection mode. Holding it reveals the ticks and turns a click anywhere
+     * on a card into a tick; releasing it clears the selection, so a group can never be left armed
+     * by accident. The whole gesture is therefore: hold Ctrl, click the cards, drag any one of them.
      */
     const releaseCtrl = () => {
       if (!ui.ctrlHeld) return;
@@ -2149,35 +2213,31 @@
       ui.selection.clear();
       applySelection();
     };
+    document.addEventListener('keydown', (event) => {
+      if (event.key !== 'Control' && event.key !== 'Meta') return;
+      if (ui.ctrlHeld) return;
+      ui.ctrlHeld = true;
+      applySelection();
+    });
     document.addEventListener('keyup', (event) => {
-      if (event.key === 'd' || event.key === 'D') releaseDeps();
       if (event.key === 'Control' || event.key === 'Meta') releaseCtrl();
     });
-    window.addEventListener('blur', () => {
-      releaseDeps();
-      releaseCtrl();
-    });
+    // alt-tabbing mid-hold must not strand either mode
+    window.addEventListener('blur', releaseCtrl);
 
+    // C puts a new card in the first column, which is where unfiled work belongs — the same thing
+    // the column's own + ADD CARD plate does, without the trip to the mouse
     document.addEventListener('keydown', (event) => {
-      if (event.key === 'Control' || event.key === 'Meta') {
-        if (ui.ctrlHeld) return;
-        ui.ctrlHeld = true;
-        applySelection();
-        return;
-      }
       if (event.ctrlKey || event.metaKey || event.altKey) return;
       const target = event.target;
       if (target && target.closest && target.closest('input, textarea, select, [contenteditable="true"]')) return;
       if (document.querySelector('dialog[open]')) return;
-      // C puts a new card in the first column, which is where unfiled work belongs — the same
-      // thing the column's own "+ ADD CARD" plate does, without the trip to the mouse
-      if (event.key === 'c' || event.key === 'C') {
-        const first = board.columns[0];
-        if (!first) return;
-        event.preventDefault();
-        ui.inlineAdd = { columnId: first.id, value: '' };
-        render();
-      }
+      if (event.key !== 'c' && event.key !== 'C') return;
+      const first = board.columns[0];
+      if (!first) return;
+      event.preventDefault();
+      ui.inlineAdd = { columnId: first.id, value: '' };
+      render();
     });
 
     // filters
@@ -2232,26 +2292,40 @@
 
     // board — add card, open card, chain highlight
     const host = $('board');
+    host.addEventListener('change', (event) => {
+      const tick = event.target.closest('.card-tick');
+      if (!tick) return;
+      const id = tick.dataset.tickFor;
+      if (tick.checked) ui.selection.add(id);
+      else ui.selection.delete(id);
+      applySelection();
+    });
     host.addEventListener('click', (event) => {
+      const main = event.target.closest('.card-main');
+      const cardEl = event.target.closest('.card');
+      // Ctrl turns a click anywhere on a card into a tick, which is why the click target is the card
+      // itself rather than the checkbox: the box is the read-out, the card is the hit area
+      if (cardEl && (ui.ctrlHeld || event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        event.stopPropagation();
+        const id = cardEl.dataset.cardId;
+        if (ui.selection.has(id)) ui.selection.delete(id);
+        else ui.selection.add(id);
+        applySelection();
+        return;
+      }
+      // a bare click on the tick (reachable by Tab, or with Ctrl already down) must not open the card
+      if (event.target.closest('.card-tick')) {
+        event.stopPropagation();
+        return;
+      }
       const addButton = event.target.closest('[data-add-to]');
       if (addButton) {
         ui.inlineAdd = { columnId: addButton.dataset.addTo, value: '' };
         render();
         return;
       }
-      const main = event.target.closest('.card-main');
-      if (!main) return;
-      // ctrl/meta turns the click into a pick rather than an open: the same click cannot mean both,
-      // and picking is the rarer intent so it takes the modifier
-      if (ui.ctrlHeld || event.ctrlKey || event.metaKey) {
-        event.preventDefault();
-        const id = main.dataset.cardId;
-        if (ui.selection.has(id)) ui.selection.delete(id);
-        else ui.selection.add(id);
-        applySelection();
-        return;
-      }
-      openCard(main.dataset.cardId);
+      if (main) openCard(main.dataset.cardId);
     });
     host.addEventListener('mouseover', (event) => {
       const cardEl = event.target.closest('.card');

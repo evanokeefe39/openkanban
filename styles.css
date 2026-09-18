@@ -237,6 +237,9 @@ html[data-highlight-priority='1'] .card[data-prio='3'][data-chain] {
    ============================================================ */
 .app {
   display: grid;
+  /* the selection bar overlays the board rather than taking a grid row, so it needs this box as its
+     containing block */
+  position: relative;
   /* minmax(0,1fr) stops a nowrap row from forcing the document wider than the viewport */
   grid-template-columns: minmax(0, 1fr);
   /* topbar, status row, then the board takes every remaining pixel — which is what makes every
@@ -1042,33 +1045,35 @@ html[data-deps-mode='1'] .card[data-chain] .card-refs {
   color: var(--color-foreground-secondary);
   white-space: nowrap;
 }
-/* while Ctrl is down the hint is the active mode, so it lights the way the deps hint does */
-html[data-select-mode='1'] #select-hint {
-  color: var(--color-accent);
-}
+/* the hint points at the checkbox now, so it explains itself without a mode to enter */
 
-/* Bulk operations. Sits above the board and only while cards are picked, so it costs no space the
-   rest of the time and cannot be confused with a permanent toolbar. */
+/* Bulk operations. An overlay, not a grid row: `.app`'s template is sized for exactly three
+   children, so a fourth in flow would take the board's `1fr` track and drop the board into an
+   implicit `auto` row — the columns would stop reaching the bottom the moment the bar appeared. */
 .selection-bar {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 6px 12px;
-  border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-  background: var(--color-background);
+  margin-top: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--line-strong);
+  background: var(--ink-bg);
   font-size: 10px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--color-foreground-secondary);
-  overflow-x: auto;
+  white-space: nowrap;
 }
 .selection-bar[hidden] {
   display: none;
 }
 .selection-count {
   color: var(--ivory);
-  white-space: nowrap;
 }
 .selection-hint {
   color: var(--color-foreground-muted);
@@ -1077,15 +1082,36 @@ html[data-select-mode='1'] #select-hint {
   display: flex;
   gap: 6px;
 }
-/* a picked card: the fill lifts and the border goes ivory, which is neither the hover lift nor a
-   dependency cane, so a selection cannot be mistaken for either */
+/* A ticked card. The marker is a box-shadow ring, not a border or a fill: the priority tint owns
+   `background`/`border-color` and the dependency canes own the edges, so a tick drawn in either
+   would be erased the moment those states applied. Nothing else on a card uses box-shadow. */
 .card[data-picked='1'] {
-  background: var(--card-bg-hover);
-  border-color: var(--ivory);
+  box-shadow: 0 0 0 2px var(--ivory);
 }
-/* in select mode the whole card is a pick target, so the pointer says so */
+/* The tick is the read-out of the Ctrl mode, not a permanent control: it appears when the modifier
+   is held and disappears with it, so the board is uncluttered the rest of the time and there is no
+   mode to leave behind. */
+.card-tick {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 4;
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: var(--ivory);
+  cursor: pointer;
+  /* the tick has to read over any card fill, including the palest priority tint */
+  outline: 1px solid var(--ring-backing);
+  outline-offset: 1px;
+  display: none;
+}
+html[data-select-mode='1'] .card-tick {
+  display: block;
+}
+/* while Ctrl is held the whole card is the tick target, so the pointer says so */
 html[data-select-mode='1'] .card-main {
-  cursor: crosshair;
+  cursor: copy;
 }
 .btn-small {
   padding: 2px 6px;

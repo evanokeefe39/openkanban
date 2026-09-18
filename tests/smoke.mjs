@@ -493,42 +493,78 @@ async function run() {
     await page.keyboard.press("Escape");
     await page.waitForFunction(() => !document.querySelector("#board .add-form"));
 
+    // 13 — bulk move: Ctrl reveals the ticks and turns a card click into a tick, then a group drag
+    // moves them all through the same gate a single move uses
+    const tickState = () =>
+      page.evaluate(() => ({
+        mode: document.documentElement.dataset.selectMode,
+        tickShown: getComputedStyle(document.querySelector(".card-tick")).display !== "none",
+        picked: [...document.querySelectorAll("#board .card[data-picked]")].map((c) => c.dataset.cardId),
+        barHidden: document.getElementById("selection-bar").hidden,
+      }));
+    check(
+      "the ticks are hidden until Ctrl is held",
+      (await tickState()).tickShown === false,
+      JSON.stringify(await tickState())
+    );
+
     await page.keyboard.down("Control");
     await page.waitForFunction(() => document.documentElement.dataset.selectMode === "1");
-    const pickCard = async (id) => {
-      const box = await page.evaluate((cardId) => {
+    const revealed = await tickState();
+    check(
+      "every card offers a tick once Ctrl is held, and the board keeps its height",
+      revealed.tickShown === true &&
+        (await page.evaluate(() => document.querySelectorAll(".card-tick").length)) ===
+          (await page.evaluate(() => document.querySelectorAll("#board .card").length)),
+      JSON.stringify(revealed)
+    );
+
+    // click anywhere on the card, not the box: the card is the hit area
+    const clickCard = async (id) => {
+      const point = await page.evaluate((cardId) => {
         const node = document.querySelector(`.card[data-card-id="${cardId}"]`);
         const rect = node.getBoundingClientRect();
-        return { x: rect.x + 20, y: rect.y + 10 };
+        return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
       }, id);
-      await page.mouse.click(box.x, box.y);
+      await page.mouse.click(point.x, point.y);
     };
-    await pickCard("c-store");
-    await pickCard("c-graph");
+    await clickCard("c-store");
+    await clickCard("c-graph");
     await page.waitForFunction(() => document.getElementById("selection-bar").hidden === false);
-    const picked = await page.evaluate(() => ({
+    const ticked = await page.evaluate(() => ({
       picked: [...document.querySelectorAll("#board .card[data-picked]")].map((c) => c.dataset.cardId),
       count: document.getElementById("selection-count").textContent,
       targets: [...document.querySelectorAll("#selection-targets button")].map((b) => b.textContent),
+      drawerOpen: document.getElementById("card-dialog").open,
+      // the bar overlays the board, so the columns must still reach the bottom
+      columnBottom: Math.round(document.querySelector(".column").getBoundingClientRect().bottom),
+      viewport: window.innerHeight,
     }));
     check(
-      "holding Ctrl picks cards and offers a bulk move to every column",
-      picked.picked.length === 2 && /2 SELECTED/.test(picked.count) && picked.targets.length === 5,
-      JSON.stringify(picked)
+      "Ctrl-clicking a card ticks it without opening it, and the bar offers every column",
+      ticked.picked.length === 2 &&
+        /2 SELECTED/.test(ticked.count) &&
+        ticked.targets.length === 5 &&
+        ticked.drawerOpen === false &&
+        ticked.columnBottom >= ticked.viewport - 20,
+      JSON.stringify(ticked)
     );
 
-    // c-store is blocked by c-shell and c-graph is not, so exactly one of the two prompts: the
-    // clause asserts the shape (a count out of the selected total) rather than the number, which
-    // depends on the seed
+    // c-store is blocked by c-shell and c-graph is not, so exactly one member prompts, by name
     await page.click('#selection-targets button[data-move-selection-to="col-progress"]');
     await page.waitForFunction(() => document.getElementById("confirm-dialog").open === true);
-    const gateTitle = await page.textContent("#confirm-title");
-    const gateBody = await page.textContent("#confirm-text");
+    const gatePrompt = await page.evaluate(() => ({
+      title: document.getElementById("confirm-title").textContent,
+      body: document.getElementById("confirm-text").textContent.replace(/\s+/g, " ").trim(),
+      items: [...document.querySelectorAll("#confirm-text li")].map((li) => li.textContent.replace(/\s+/g, " ").trim()),
+    }));
     check(
-      "a bulk move of blocked cards into a gated column asks once, naming the count",
-      gateTitle === "BLOCKED CARDS → GATED COLUMN" &&
-        /\d+ of the \d+ selected cards? (is|are) blocked/.test(gateBody),
-      JSON.stringify({ gateTitle, gateBody: gateBody.slice(0, 90) })
+      "the gate asks once, naming the blocked cards in the batch",
+      gatePrompt.title === "BLOCKED CARDS → GATED COLUMN" &&
+        /1 of the 2 cards being moved is blocked/.test(gatePrompt.body) &&
+        gatePrompt.items.length === 1 &&
+        /^#\d+ .+ — /.test(gatePrompt.items[0]),
+      JSON.stringify(gatePrompt)
     );
 
     await page.click("#confirm-ok");
@@ -541,27 +577,33 @@ async function run() {
           override: [...node.querySelectorAll(".chip")].some((c) => /OVERRIDE/.test(c.textContent)),
         };
       };
-      return { store: read("c-store"), graph: read("c-graph") };
+      return {
+        store: read("c-store"),
+        graph: read("c-graph"),
+        ticksLeft: [...document.querySelectorAll(".card-tick")].filter((t) => t.checked).length,
+        barHidden: document.getElementById("selection-bar").hidden,
+      };
     });
     check(
-      "confirming the bulk move relocates every picked card and records the overrides",
-      bulk.store.column === "col-progress" && bulk.graph.column === "col-progress" && bulk.store.override,
+      "confirming moves every ticked card, records the override, and clears the batch",
+      bulk.store.column === "col-progress" &&
+        bulk.graph.column === "col-progress" &&
+        bulk.store.override &&
+        bulk.ticksLeft === 0 &&
+        bulk.barHidden === true,
       JSON.stringify(bulk)
     );
 
     await page.keyboard.up("Control");
     await page.waitForFunction(() => document.documentElement.dataset.selectMode === "0");
-    const released = await page.evaluate(() => ({
-      picked: document.querySelectorAll("#board .card[data-picked]").length,
-      barHidden: document.getElementById("selection-bar").hidden,
-    }));
+    const released = await tickState();
     check(
-      "releasing Ctrl clears the picks and hides the bulk bar",
-      released.picked === 0 && released.barHidden === true,
+      "releasing Ctrl clears the selection and hides the ticks again",
+      released.picked.length === 0 && released.barHidden === true && released.tickShown === false,
       JSON.stringify(released)
     );
 
-    // 13 — nothing threw along the way
+    // 14 — nothing threw along the way
     check("the page logged no errors", pageErrors.length === 0, pageErrors.join(" | "));
   } catch (error) {
     check("suite ran to completion", false, error && error.stack ? error.stack.split("\n").slice(0, 4).join(" | ") : error);
