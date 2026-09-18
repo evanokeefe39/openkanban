@@ -3,6 +3,12 @@
 Read this before changing anything here. It is the project's operating manual: what the app is, the
 one rule that shapes it, how to run and verify it, and the conventions a change must follow.
 
+> **A port to React 19 / Next.js 16 is planned and takes precedence over new feature work on the
+> vanilla app.** The kickoff plan — phases, packages, invariants and risks — is
+> [`tasks/plans/next-react-port.md`](tasks/plans/next-react-port.md). Read that first if you are
+> starting the migration. Everything below describes the current, vanilla implementation, which
+> remains the reference until the port is verified.
+
 ## What this is
 
 A kanban board where **dependencies are the point rather than a decoration**. Three files carry the
@@ -147,4 +153,5 @@ proof that a feature works.
 | `ISSUES.md` | bugs found and fixed, and the known limitations that remain |
 | `LEARNINGS.md` | the mistakes already made here, so they are not made twice |
 | `WATCHDOG.md` | reviewer guidance: what to be suspicious of in this codebase |
-| `tasks/plans/openkanban-mvp.md` | the build's specification, defect log and verification tally |
+| `tasks/plans/openkanban-mvp.md` | the build's specification, defect log and verification tally for the **vanilla** implementation |
+| `tasks/plans/next-react-port.md` | the kickoff plan for the React/Next.js port — read this first if you are starting the migration |
