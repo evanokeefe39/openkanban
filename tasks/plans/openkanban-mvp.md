@@ -160,6 +160,15 @@ always describe the whole board, not the filtered view.
 **C14 — Boot without a server.** GIVEN the folder opened directly (`file://index.html`), THEN the
 app boots and persists identically — no ES modules, no fetch of local assets.
 
+**C15 — Reset is gated on a typed word.** GIVEN a board with cards, WHEN the reset control is
+activated, THEN a dialog states how many cards will be deleted and the confirming button stays
+disabled and hollow until the word `delete` is typed (case-insensitively, with the surrounding
+whitespace ignored). Confirm deletes every card and every edge between them, keeps the columns, the
+board name and the view options, persists the empty board (a reload must not re-seed it), reports
+the count in a toast, and disables the reset control until a card exists again. Cancel and Escape
+change nothing. The dialog is unreachable with nothing to delete, and numbering restarts at #1 on
+the next card because no live reference to the old numbers survives the wipe.
+
 ## Edge Case Inventory
 
 1. First run, empty storage → seed (C2).
@@ -267,8 +276,9 @@ Verification tally — the runs, each counted once, summing to the total:
 14 icons + popover (first pass), 21 icons + popover + numbers + hold-D (after the fixes),
 8 numbering/migration/edge semantics, 10 regression over the new features, 4 hover-ring semantics,
 7 regression over the card surface change, 7 column-header checks, 9 ink-surface checks,
-6 ring-separator checks, 6 overlay-contrast checks.
-**337 assertions across 23 runs.**
+6 ring-separator checks, 6 overlay-contrast checks, 14 reset-flow checks, 5 surface-and-header
+colour checks, plus the committed smoke suite (18 checks) run end to end.
+**372 assertions across 26 runs.**
 
 Thirty-one failed on first pass. Two were real product defects, both found by a test rather than
 by review, both fixed: the icon CDN executing nothing (defect 11) and a chip click dismissing the
@@ -384,6 +394,25 @@ horizontal scroll: 0), which is the standard kanban affordance, and at COMPACT d
     After: rings 4.5:1 or better on all four surfaces (plain, P0, P1, P2), arrow text 5.71:1 or
     better, and ring rendering identical whether the fills are tinted or not — which is the property
     that matters, since it means the tint can never degrade the overlay again.
+16. **The inherited navy surface family** (user-reported: "I thought we replaced the weird navy blue
+    with ink black but the bg of settings/import/export buttons is still that colour"). The buttons
+    were innocent — all six were transparent with 1px rules. The navy was the *surface behind them*:
+    three tokens (`--color-surface #141420`, `--color-surface-elevated #1e1e30` and
+    `--color-surface-interactive #252540`, the last referenced nowhere at all) painted every dialog,
+    the toast and every hover state, plus `--col-bg #0d0b13` under every column and `--color-border`
+    `#27273a` on both scrollbars. So a button's colour depended on which plane it happened to sit on,
+    and the "same" control looked like two different controls depending where it was placed.
+    Replaced with three surfaces and one lift: page, card, ink (chrome), and
+    `--lift: rgba(255,255,255,0.06)` for every hover — measured to read on the page, on ink and on a
+    card alike. The unused tokens and the `--unit`/`--color-vu-yellow` pair that nothing referenced
+    were deleted, and the recessed planes were warmed from `#0b0a12` to `#0c0909`.
+17. **Deleting a CSS token leaves the declaration silently dead** — found while making the change
+    above: `var(--col-bg)` survived its own token's deletion and simply resolved to nothing, with no
+    console error and nothing in a browser smoke test to catch it (`.column` would have lost its
+    fill with every check still passing). Fixed by adding `tests/check-styles.mjs`, which cross
+    references every `var(--x)` use against the definitions and fails the build otherwise. Proved in
+    both directions: it exits 1 naming `--col-bg` at styles.css:685 on the broken state, and passes
+    once the reference is fixed.
 
 Claims that did not survive checking: a visual audit asserted the columns had different widths and
 that DONE was narrower; measurement shows five × 268px and zero card/chip overflow. The same audit's
@@ -480,6 +509,22 @@ that DONE was narrower; measurement shows five × 268px and zero card/chip overf
     the arrow strip and, earlier, the priority rail's relationship to the card surface — and the
     reason is measured rather than aesthetic: contrast for a coloured ring is set by what is
     immediately behind it, not by the fill underneath the whole card.
+22. **The columns and the navbar are the last two surfaces to be pinned down** (both user-directed in
+    the same pass as the navy removal). The columns now share the page's fill, so a column is defined
+    by its 1px rule and its header's stronger hairline rather than by a plane of its own; the navbar
+    takes carbon black `#1c1a1c`, the one band that is neither the page nor a card, so the chrome
+    reads as a strip across the top. Consequence: the navbar is the third surface colour in the app
+    and it has to hold text at 10px — the lamp readout measured 3.58:1 against it and moved from
+    muted to secondary (6.81:1) to stay above AA.
+23. **Reset restarts card numbering at #1**, where the rest of the app never reuses a number. The
+    invariant exists so a reference in someone's head ("4 blocks 6") cannot go stale while a card
+    carrying that number is still on the board; with no cards left there is nothing to point at, so
+    the empty board starts from 1 again. Numbering is not renumbered *within* a board either way.
+24. **The reset trigger reuses the destructive colour rather than introducing a danger hue.** The
+    trigger is a ghost (`--color-destructive` text and border, like the card-delete button); only the
+    confirm button fills, and only once the word has armed it. This keeps the fifth hue out of a
+    palette where every colour already means something (priority rail, blocked/override, due today,
+    the dependency overlay).
 
 ## Reasoning trace
 
