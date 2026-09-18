@@ -1,0 +1,17 @@
+{
+  "name": "openkanban",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A kanban board with dependencies, as one static page. No build step, no server, no accounts.",
+  "scripts": {
+    "serve": "node tools/serve.mjs",
+    "check": "node --check app.js && node --check tests/smoke.mjs && node --check tools/serve.mjs && node tests/check-styles.mjs",
+    "test": "node tests/smoke.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0"
+  }
+}

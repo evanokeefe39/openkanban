@@ -9,8 +9,9 @@
  * {
  *   version: 1,
  *   name: string,
+ *   nextNumber: number,          // monotonic; a number is issued once and never reused
  *   columns: [{ id, name, gate: boolean, done: boolean, cardIds: string[] }],
- *   cards: { [id]: { id, title, notes, priority: 0..3, due: 'YYYY-MM-DD'|'',
+ *   cards: { [id]: { id, number, title, notes, priority: 0..3, due: 'YYYY-MM-DD'|'',
  *                    labels: string[], blockedBy: string[], createdAt, updatedAt } }
  * }
  *
@@ -31,15 +32,68 @@
 
   const PRIORITIES = [
     { value: 0, label: 'NONE', title: 'No priority' },
-    { value: 1, label: 'P0', title: 'P0 — critical', color: '#ef4444' },
-    { value: 2, label: 'P1', title: 'P1 — high', color: '#f59e0b' },
-    { value: 3, label: 'P2', title: 'P2 — low', color: '#6b7280' },
+    { value: 1, label: 'P0', title: 'P0 — critical' },
+    { value: 2, label: 'P1', title: 'P1 — high' },
+    { value: 3, label: 'P2', title: 'P2 — low' },
   ];
 
-  /** Label colours reuse the reference instrument's EQ band palette. */
-  const LABEL_COLORS = [
-    '#ef4444', '#f97316', '#f59e0b', '#eab308',
-    '#22c55e', '#14b8a6', '#3b82f6', '#8b5cf6',
+  /** Filter categories behind the strip chevron. Chips within a group OR; groups AND. */
+  const STATUS_FILTERS = [
+    { id: 'blocked', label: 'BLOCKED', title: 'Cards with at least one unfinished blocker' },
+    { id: 'override', label: 'OVERRIDE', title: 'Blocked cards sitting in a gated column' },
+    { id: 'blocking', label: 'BLOCKING', title: 'Cards that other cards wait on' },
+  ];
+
+  const DUE_FILTERS = [
+    { id: 'overdue', label: 'OVERDUE', title: 'Past due and not in a done column' },
+    { id: 'today', label: 'DUE TODAY', title: 'Due today and not in a done column' },
+  ];
+
+  /**
+   * View options are presentation state, kept per browser rather than in the board document, so
+   * importing someone else's board does not rewrite how you like to look at it.
+   */
+  const VIEW_KEY = 'openkanban.view.v1';
+  const DEFAULT_VIEW = {
+    density: 'compact',
+    showNumbers: true,
+    showPriority: true,
+    showLabels: true,
+    showDue: true,
+    showStatus: true,
+    highlightPriority: false,
+  };
+  const VIEW_TOGGLES = [
+    {
+      key: 'showNumbers',
+      label: 'CARD NUMBERS',
+      title: 'The ticket number on each card, assigned once in creation order and never reused',
+    },
+    {
+      key: 'showPriority',
+      label: 'PRIORITY RAIL + TAGS',
+      title: 'The 2px rail on the card edge and the P0/P1/P2 tag',
+    },
+    {
+      key: 'showLabels',
+      label: 'LABELS ON CARDS',
+      title: 'Label chips on the card face — the labels themselves are untouched',
+    },
+    {
+      key: 'showDue',
+      label: 'DUE DATES',
+      title: 'Due, due-today and overdue chips on the card face',
+    },
+    {
+      key: 'showStatus',
+      label: 'BLOCKER BADGES',
+      title: 'Blocked, override and blocks chips — hiding them does not change gating',
+    },
+    {
+      key: 'highlightPriority',
+      label: 'CARD BACKGROUND BY PRIORITY',
+      title: 'Fill each card by its priority instead of drawing only the 2px rail',
+    },
   ];
 
   const DEFAULT_COLUMNS = [
@@ -108,12 +162,6 @@
     ).padStart(2, '0')}`;
   }
 
-  function labelColor(name) {
-    let hash = 0;
-    for (let i = 0; i < name.length; i += 1) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
-    return LABEL_COLORS[hash % LABEL_COLORS.length];
-  }
-
   function titleCaseLabel(name) {
     return name.toUpperCase();
   }
@@ -127,18 +175,34 @@
   // ==========================================================================
 
   let board = null;
+  let view = { ...DEFAULT_VIEW };
   let lastWritten = null;
   let lastWriteTime = null;
+  // Where the current board came from, so the UI can say it: 'sample' for the seeded board,
+  // 'storage' for one restored from localStorage, 'import' for a file the user opened. Undefined
+  // until boot decides, and cleared to null once the board is edited into something of the user's own.
+  let boardOrigin = null;
   let writeErrorStreak = false;
 
   const ui = {
     query: '',
     labels: new Set(),
-    blockedOnly: false,
+    priorities: new Set(),
+    statuses: new Set(),
+    due: new Set(),
+    filterOpen: false,
     dragId: null,
+    // the ids a current drag carries: one, or the whole ticked set when a ticked card is dragged
+    dragIds: [],
     activeCardId: null,
     inlineAdd: null,
+    // cards ticked for a bulk move, keyed by id so the set survives re-renders.
+    selection: new Set(),
+    // Ctrl/Cmd held: reveals the ticks and turns a card click into a tick. The selection lives only
+    // while the key is down, so there is no stored mode to leave behind.
+    ctrlHeld: false,
     chainId: null,
+    depsHeld: false,
   };
 
   // ==========================================================================
@@ -194,6 +258,7 @@
       const createdAt = typeof value.createdAt === 'string' ? value.createdAt : new Date().toISOString();
       cards[id] = {
         id,
+        number: Number.isInteger(value.number) && value.number > 0 ? value.number : 0,
         title,
         notes: typeof value.notes === 'string' ? value.notes : '',
         priority: prio,
@@ -204,6 +269,19 @@
         updatedAt: typeof value.updatedAt === 'string' ? value.updatedAt : createdAt,
       };
     }
+
+    // A number is a handle: it is assigned once, in creation order, and never reused or renumbered —
+    // a card that moves between columns keeps the number people refer to it by.
+    let top = 0;
+    for (const card of Object.values(cards)) top = Math.max(top, card.number);
+    const unnumbered = Object.values(cards).filter((card) => !card.number);
+    if (unnumbered.length) {
+      unnumbered.sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
+      for (const card of unnumbered) card.number = ++top;
+      repairs.push(`numbered ${unnumbered.length} card(s) that had none`);
+    }
+    const declaredNext = Number(raw.nextNumber);
+    const nextNumber = Math.max(Number.isInteger(declaredNext) && declaredNext > 0 ? declaredNext : 1, top + 1);
 
     const columns = [];
     const placed = new Set();
@@ -264,7 +342,7 @@
     const name =
       typeof raw.name === 'string' && raw.name.trim() ? titleCaseLabel(raw.name.trim()) : 'MAIN BOARD';
 
-    return { ok: true, board: { version: SCHEMA_VERSION, name, columns, cards }, repairs };
+    return { ok: true, board: { version: SCHEMA_VERSION, name, columns, cards, nextNumber }, repairs };
   }
 
   function readStored() {
@@ -328,6 +406,53 @@
     $('storage-lamp-text').textContent =
       state === 'saved' ? 'SAVED' : state === 'error' ? 'STORAGE ERROR' : 'READY';
     lamp.title = detail || '';
+  }
+
+  function loadView() {
+    let raw;
+    try {
+      raw = localStorage.getItem(VIEW_KEY);
+    } catch (error) {
+      return { view: { ...DEFAULT_VIEW }, problem: `storage unavailable (${error.message})` };
+    }
+    if (!raw) return { view: { ...DEFAULT_VIEW }, problem: null };
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return { view: { ...DEFAULT_VIEW }, problem: 'saved view options were not valid JSON' };
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { view: { ...DEFAULT_VIEW }, problem: 'saved view options were not an object' };
+    }
+    const next = { ...DEFAULT_VIEW };
+    let problem = null;
+    if (parsed.density === 'compact' || parsed.density === 'normal') next.density = parsed.density;
+    else if (parsed.density !== undefined) problem = `unknown density "${parsed.density}"`;
+    for (const toggle of VIEW_TOGGLES) {
+      const value = parsed[toggle.key];
+      if (typeof value === 'boolean') next[toggle.key] = value;
+      else if (value !== undefined && !problem) problem = `"${toggle.key}" was not a boolean`;
+    }
+    return { view: next, problem };
+  }
+
+  function saveView() {
+    try {
+      localStorage.setItem(VIEW_KEY, JSON.stringify(view));
+    } catch (error) {
+      toast('error', `VIEW OPTIONS NOT SAVED — ${error.message}`);
+      return;
+    }
+    if ($('settings-dialog').open) renderStorageInfo();
+  }
+
+  function applyView() {
+    const root = document.documentElement;
+    root.dataset.density = view.density;
+    for (const toggle of VIEW_TOGGLES) {
+      root.dataset[toggle.key] = view[toggle.key] ? '1' : '0';
+    }
   }
 
   // ==========================================================================
@@ -437,6 +562,8 @@
 
   function commit(mutate) {
     mutate();
+    // the moment anything changes, the board is the user's own work and no longer "the sample"
+    boardOrigin = null;
     saveBoard();
     render();
   }
@@ -461,6 +588,7 @@
     commit(() => {
       board.cards[id] = {
         id,
+        number: board.nextNumber,
         title,
         notes: '',
         priority: 0,
@@ -470,6 +598,7 @@
         createdAt: now,
         updatedAt: now,
       };
+      board.nextNumber += 1;
       column.cardIds.push(id);
     });
     return id;
@@ -732,19 +861,68 @@
   // Filtering
   // ==========================================================================
 
+  function matchesStatus(target, status) {
+    if (status === 'blocked') return isBlocked(target.id);
+    if (status === 'override') {
+      const column = columnOf(target.id);
+      return isBlocked(target.id) && !!(column && column.gate);
+    }
+    if (status === 'blocking') return dependentsOf(target.id).length > 0;
+    return true;
+  }
+
+  function matchesDue(target, kind) {
+    if (!target.due || isDone(target.id)) return false;
+    const delta = daysUntil(target.due);
+    if (kind === 'overdue') return delta < 0;
+    if (kind === 'today') return delta === 0;
+    return true;
+  }
+
+  /** Chips within a category are OR'd; separate categories are AND'd. */
   function matchesFilter(target) {
-    if (ui.blockedOnly && !isBlocked(target.id)) return false;
-    if (ui.labels.size && !target.labels.some((label) => ui.labels.has(label))) return false;
     const query = ui.query.trim().toLowerCase();
     if (query) {
       const haystack = `${target.title} ${target.notes} ${target.labels.join(' ')}`.toLowerCase();
       if (!haystack.includes(query)) return false;
     }
+    if (ui.labels.size && !target.labels.some((label) => ui.labels.has(label))) return false;
+    if (ui.priorities.size && !ui.priorities.has(target.priority)) return false;
+    if (ui.statuses.size && ![...ui.statuses].some((status) => matchesStatus(target, status))) return false;
+    if (ui.due.size && ![...ui.due].some((kind) => matchesDue(target, kind))) return false;
     return true;
   }
 
-  function filterActive() {
-    return !!(ui.query.trim() || ui.labels.size || ui.blockedOnly);
+  function activeFilterCount() {
+    return ui.labels.size + ui.priorities.size + ui.statuses.size + ui.due.size + (ui.query.trim() ? 1 : 0);
+  }
+
+  function clearFilters() {
+    ui.query = '';
+    ui.labels = new Set();
+    ui.priorities = new Set();
+    ui.statuses = new Set();
+    ui.due = new Set();
+  }
+
+  function toggleFilterKey(key) {
+    const [kind, raw] = key.split(':');
+    if (kind === 'label') {
+      if (ui.labels.has(raw)) ui.labels.delete(raw);
+      else ui.labels.add(raw);
+    } else if (kind === 'prio') {
+      const value = Number(raw);
+      if (ui.priorities.has(value)) ui.priorities.delete(value);
+      else ui.priorities.add(value);
+    } else if (kind === 'status') {
+      if (ui.statuses.has(raw)) ui.statuses.delete(raw);
+      else ui.statuses.add(raw);
+    } else if (kind === 'due') {
+      if (ui.due.has(raw)) ui.due.delete(raw);
+      else ui.due.add(raw);
+    }
+    renderFilters();
+    renderBoard();
   }
 
   // ==========================================================================
@@ -755,6 +933,9 @@
     renderHeader();
     renderFilters();
     renderBoard();
+    // the ticks are rebuilt with the cards, so the ticked set has to be re-applied to them — and
+    // pruned, since a render is also how a deleted card leaves the board
+    applySelection();
     if ($('card-dialog').open) fillCardDialog();
   }
 
@@ -773,37 +954,157 @@
     ];
     if (overrides.length) parts.push(`${overrides.length} OVERRIDE`);
     $('counters').textContent = parts.join('  ·  ');
-    $('prio-legend').hidden = !all.some((c) => c.priority > 0);
+    // the legend explains the rail, so it is only worth showing when the rail is: with priority
+    // rails off there is nothing on the board for it to refer to
+    $('prio-legend').hidden = !(view.showPriority && all.some((c) => c.priority > 0));
+    $('btn-reset').disabled = all.length === 0;
+    const settingsReset = $('settings-reset');
+    if (settingsReset) settingsReset.disabled = all.length === 0;
+    // the read-out row offers the sample back while the board is empty, and only then
+    document.documentElement.dataset.boardEmpty = all.length === 0 ? '1' : '0';
+  }
+
+  /**
+   * The pane is fixed-positioned and placed from the trigger's rect: the navbar scrolls, so an
+   * absolutely-positioned popover inside it would be clipped. Clamped to the viewport, since the
+   * trigger can sit near the right edge on a narrow window.
+   */
+  function positionFilterPanel() {
+    const panel = $('filter-panel');
+    if (panel.hidden) return;
+    const trigger = $('filter-toggle');
+    const rect = trigger.getBoundingClientRect();
+    const width = panel.offsetWidth;
+    const margin = 12;
+    const left = Math.max(margin, Math.min(rect.left, window.innerWidth - width - margin));
+    panel.style.left = `${Math.round(left)}px`;
+    panel.style.top = `${Math.round(rect.bottom + 6)}px`;
   }
 
   function renderFilters() {
-    const used = new Set();
-    for (const target of Object.values(board.cards)) {
-      for (const label of target.labels) used.add(label);
-    }
-    const host = $('label-filters');
-    host.textContent = '';
-    const focusedLabel =
-      document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.label : null;
-    for (const label of [...used].sort()) {
-      const chip = el('button', 'chip', label);
-      chip.type = 'button';
-      chip.dataset.label = label;
-      chip.setAttribute('aria-pressed', ui.labels.has(label) ? 'true' : 'false');
-      chip.title = `Filter by ${label}`;
-      const dot = el('span', 'dot');
-      dot.style.background = labelColor(label);
-      chip.prepend(dot);
-      if (ui.labels.has(label)) chip.style.color = 'var(--color-foreground)';
-      host.appendChild(chip);
-    }
-    $('filter-blocked').setAttribute('aria-pressed', ui.blockedOnly ? 'true' : 'false');
+    const count = activeFilterCount();
+    const toggle = $('filter-toggle');
+    toggle.setAttribute('aria-expanded', ui.filterOpen ? 'true' : 'false');
+    // the button is icon-only, so the active count has to be spoken: the badge itself is inside the
+    // element the label overrides
+    toggle.setAttribute('aria-label', count ? `Filter cards, ${count} active` : 'Filter cards');
+    const badge = $('filter-count');
+    badge.textContent = String(count);
+    badge.hidden = count === 0;
+    $('filter-panel').hidden = !ui.filterOpen;
     const queryInput = $('filter-query');
     if (document.activeElement !== queryInput && queryInput.value !== ui.query) {
       queryInput.value = ui.query;
     }
-    if (focusedLabel) {
-      const again = host.querySelector(`button[data-label="${focusedLabel}"]`);
+    if (ui.filterOpen) {
+      renderFilterPanel();
+      // rendered before measuring: the pane's own width depends on its content
+      positionFilterPanel();
+    }
+  }
+
+  function filterGroup(name) {
+    const group = el('div', 'filter-group');
+    group.appendChild(el('span', 'filter-group-name', name));
+    group.appendChild(el('div', 'chips'));
+    return group;
+  }
+
+  function filterChip({ key, label, pressed, title, swatchPrio }) {
+    const chip = el('button', 'chip', label);
+    chip.type = 'button';
+    chip.dataset.filterKey = key;
+    chip.setAttribute('aria-pressed', pressed ? 'true' : 'false');
+    if (title) chip.title = title;
+    if (swatchPrio !== undefined) {
+      chip.dataset.prio = String(swatchPrio);
+      chip.insertBefore(el('i', 'prio-swatch'), chip.firstChild);
+    }
+    return chip;
+  }
+
+  function renderFilterPanel() {
+    const host = $('filter-panel');
+    const focusedKey =
+      document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.filterKey : null;
+    host.textContent = '';
+
+    const used = new Set();
+    for (const target of Object.values(board.cards)) {
+      for (const label of target.labels) used.add(label);
+    }
+
+    const labelGroup = filterGroup('LABEL');
+    const labelHost = labelGroup.querySelector('.chips');
+    if (used.size) {
+      for (const label of [...used].sort()) {
+        labelHost.appendChild(
+          filterChip({
+            key: `label:${label}`,
+            label,
+            pressed: ui.labels.has(label),
+            title: `Show only cards labelled ${label}`,
+          })
+        );
+      }
+    } else {
+      labelHost.appendChild(el('span', 'hint', 'NO LABELS ON THIS BOARD YET'));
+    }
+    host.appendChild(labelGroup);
+
+    const prioGroup = filterGroup('PRIORITY');
+    const prioHost = prioGroup.querySelector('.chips');
+    for (const option of PRIORITIES) {
+      prioHost.appendChild(
+        filterChip({
+          key: `prio:${option.value}`,
+          label: option.value === 0 ? 'NONE' : option.label,
+          pressed: ui.priorities.has(option.value),
+          title: option.title,
+          swatchPrio: option.value,
+        })
+      );
+    }
+    host.appendChild(prioGroup);
+
+    const statusGroup = filterGroup('BLOCKED');
+    const statusHost = statusGroup.querySelector('.chips');
+    for (const option of STATUS_FILTERS) {
+      statusHost.appendChild(
+        filterChip({
+          key: `status:${option.id}`,
+          label: option.label,
+          pressed: ui.statuses.has(option.id),
+          title: option.title,
+        })
+      );
+    }
+    host.appendChild(statusGroup);
+
+    const dueGroup = filterGroup('DUE');
+    const dueHost = dueGroup.querySelector('.chips');
+    for (const option of DUE_FILTERS) {
+      dueHost.appendChild(
+        filterChip({
+          key: `due:${option.id}`,
+          label: option.label,
+          pressed: ui.due.has(option.id),
+          title: option.title,
+        })
+      );
+    }
+    host.appendChild(dueGroup);
+
+    const foot = el('div', 'filter-panel-foot');
+    const clear = el('button', 'btn', 'CLEAR ALL');
+    clear.type = 'button';
+    clear.dataset.act = 'clear';
+    clear.disabled = activeFilterCount() === 0;
+    foot.appendChild(clear);
+    host.appendChild(foot);
+
+    if (focusedKey) {
+      const again = host.querySelector(`[data-filter-key="${focusedKey}"]`);
       if (again) again.focus({ preventScroll: true });
     }
   }
@@ -822,11 +1123,11 @@
       visible += column.cardIds.filter((id) => card(id) && matchesFilter(card(id))).length;
     }
 
-    if (!visible) {
-      const total = Object.keys(board.cards).length;
-      host.appendChild(
-        el('p', 'plate', total === 0 ? 'NO CARDS — USE + ADD CARD IN ANY COLUMN' : 'NO CARDS MATCH THE FILTER')
-      );
+    if (!visible && Object.keys(board.cards).length) {
+      // an empty board needs no plate: every column already offers "+ ADD CARD". A board whose
+      // cards are all hidden by the filter is the case that needs saying, since nothing on screen
+      // explains the absence.
+      host.appendChild(el('p', 'plate', 'NO CARDS MATCH THE FILTER'));
     }
 
     if (focusedCardId) {
@@ -852,83 +1153,213 @@
     const hidden = cards.length - shown.length;
 
     const head = el('div', 'col-head');
-    const lamp = el('span', 'lamp-sm');
-    const actionable = cards.filter((c) => !isBlocked(c.id)).length;
-    lamp.dataset.state = !cards.length ? 'idle' : actionable ? 'go' : 'blocked';
-    lamp.title = !cards.length
-      ? 'empty'
-      : `${actionable} unblocked of ${cards.length} card(s)`;
-    head.appendChild(lamp);
     head.appendChild(el('h2', 'col-name', column.name));
     if (hidden) head.appendChild(el('span', 'col-hidden', `+${hidden} HIDDEN`));
     head.appendChild(el('span', 'col-count', String(cards.length)));
+    const addButton = el('button', 'col-add', '+');
+    addButton.type = 'button';
+    addButton.dataset.addTo = column.id;
+    addButton.title = 'Add card';
+    addButton.setAttribute('aria-label', `Add card to ${column.name}`);
+    head.appendChild(addButton);
     wrapper.appendChild(head);
 
     const body = el('div', 'col-body');
     body.dataset.columnId = column.id;
+    if (ui.inlineAdd && ui.inlineAdd.columnId === column.id) body.appendChild(buildAddForm(column));
     if (!shown.length) {
-      body.appendChild(el('p', 'plate', cards.length ? 'ALL HIDDEN BY FILTER' : 'EMPTY'));
+      if (cards.length) {
+        body.appendChild(el('p', 'plate', 'ALL HIDDEN BY FILTER'));
+      } else {
+        const emptyAction = el('button', 'plate plate-action', '+ ADD CARD');
+        emptyAction.type = 'button';
+        emptyAction.dataset.addTo = column.id;
+        emptyAction.title = 'Add card';
+        emptyAction.setAttribute('aria-label', `Add card to ${column.name}`);
+        body.appendChild(emptyAction);
+      }
     } else {
       for (const target of shown) body.appendChild(buildCard(target));
     }
     wrapper.appendChild(body);
 
-    const foot = el('div', 'col-foot');
-    if (ui.inlineAdd && ui.inlineAdd.columnId === column.id) {
-      const form = el('form', 'add-form');
-      const textarea = el('textarea', 'input');
-      textarea.rows = 2;
-      textarea.placeholder = 'CARD TITLE';
-      textarea.value = ui.inlineAdd.value || '';
-      textarea.setAttribute('aria-label', `New card in ${column.name}`);
-      textarea.addEventListener('input', () => {
-        ui.inlineAdd.value = textarea.value;
-      });
-      textarea.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter' && !event.shiftKey) {
-          event.preventDefault();
-          const title = textarea.value;
-          ui.inlineAdd = { columnId: column.id, value: '' };
-          const created = addCard(column.id, title);
-          if (!created) render();
-        } else if (event.key === 'Escape') {
-          event.preventDefault();
-          ui.inlineAdd = null;
-          render();
-        }
-      });
-      const hint = el('p', 'hint', 'ENTER TO ADD · SHIFT+ENTER FOR A NEW LINE · ESC TO CLOSE');
-      form.appendChild(textarea);
-      form.appendChild(hint);
-      form.addEventListener('submit', (event) => event.preventDefault());
-      foot.appendChild(form);
-    } else {
-      const add = el('button', 'add-card', '+ ADD CARD');
-      add.type = 'button';
-      add.dataset.addTo = column.id;
-      foot.appendChild(add);
-    }
-    wrapper.appendChild(foot);
-
     return wrapper;
   }
 
+  function buildAddForm(column) {
+    const form = el('form', 'add-form');
+    const textarea = el('textarea', 'input');
+    textarea.rows = 2;
+    textarea.placeholder = 'CARD TITLE';
+    textarea.value = (ui.inlineAdd && ui.inlineAdd.value) || '';
+    textarea.setAttribute('aria-label', `New card in ${column.name}`);
+    textarea.addEventListener('input', () => {
+      ui.inlineAdd.value = textarea.value;
+    });
+    textarea.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        const title = textarea.value;
+        ui.inlineAdd = { columnId: column.id, value: '' };
+        const created = addCard(column.id, title);
+        if (!created) {
+          render();
+          return;
+        }
+        const node = $('board').querySelector(`[data-card-id="${created}"]`);
+        if (node) node.scrollIntoView({ block: 'nearest' });
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        ui.inlineAdd = null;
+        render();
+      }
+    });
+    form.appendChild(textarea);
+    form.appendChild(el('p', 'hint', 'ENTER TO ADD · SHIFT+ENTER FOR A NEW LINE · ESC TO CLOSE'));
+    form.addEventListener('submit', (event) => event.preventDefault());
+    return form;
+  }
+
   /**
-   * Chain rings are patched onto the existing nodes: a full re-render on every
+   * Chain canes are patched onto the existing nodes: a full re-render on every
    * hover would reset each column's scroll position under the pointer.
+   *
+   * Two directions, drawn independently: which cards this one blocks (its
+   * dependents, red) and which cards block it (its unfinished blockers, cream).
+   * Both are computed transitively, so the cane reaches through the whole chain
+   * rather than just the immediate edges.
    */
   function applyChainHighlight() {
-    const up = ui.chainId ? blockedChain(ui.chainId) : null;
-    const down = ui.chainId ? closure(ui.chainId, 'down') : null;
+    // The dependency read-out is hover plus the key: holding D turns a plain hover (which only
+    // lifts the card) into a read-out of that card's chain. Without D there are no canes, and
+    // with D but no hover there is nothing to read — so the board only ever answers a question
+    // about one card, and never lights up in full.
+    const anchor = ui.depsHeld ? ui.chainId : null;
+    document.documentElement.dataset.depsMode = ui.depsHeld ? '1' : '0';
+    const blocks = anchor ? closure(anchor, 'down') : null;
+    const blocked = anchor ? blockedChain(anchor) : null;
     for (const node of document.querySelectorAll('#board .card')) {
       const id = node.dataset.cardId;
-      let relation = null;
-      if (ui.chainId && id === ui.chainId) relation = 'self';
-      else if (up && up.has(id)) relation = down && down.has(id) ? 'up-down' : 'up';
-      else if (down && down.has(id)) relation = 'down';
-      if (relation) node.dataset.chain = relation;
+      const isBlocks = !!blocks && blocks.has(id);
+      const isBlocked = !!blocked && blocked.has(id);
+      // the hovered card is the subject, not a verb in the sentence, so it gets no cane of its own
+      // — and no refs row either: the two canes already say which way each edge runs.
+      if (id === anchor) node.removeAttribute('data-chain');
+      else if (isBlocks && isBlocked) node.dataset.chain = 'both';
+      else if (isBlocks) node.dataset.chain = 'blocks';
+      else if (isBlocked) node.dataset.chain = 'blocked';
       else node.removeAttribute('data-chain');
     }
+  }
+
+  /**
+   * Reflect the ticked set on the board. Patched onto the existing nodes rather than re-rendering:
+   * a re-render would drop each column's scroll position and, worse, rebuild the checkbox the user
+   * just clicked out from under the pointer.
+   */
+  function applySelection() {
+    // a card can be deleted between ticks: prune ids that are no longer on the board, or the bar
+    // would count cards the user cannot see
+    for (const id of [...ui.selection]) if (!card(id)) ui.selection.delete(id);
+    // the ticks are only on screen while Ctrl is held — that is the mode, and its end is what
+    // clears the selection, so nothing is ever left armed
+    document.documentElement.dataset.selectMode = ui.ctrlHeld ? '1' : '0';
+    for (const node of document.querySelectorAll('#board .card')) {
+      const ticked = ui.selection.has(node.dataset.cardId);
+      if (ticked) node.dataset.picked = '1';
+      else node.removeAttribute('data-picked');
+      const box = node.querySelector('.card-tick');
+      if (box) box.checked = ticked;
+    }
+    const bar = $('selection-bar');
+    if (!bar) return;
+    const count = ui.selection.size;
+    bar.hidden = !count;
+    if (!count) return;
+    $('selection-count').textContent = `${count} SELECTED`;
+    // the targets are the columns themselves, so the bar reads as "these cards, into there"
+    const targets = $('selection-targets');
+    targets.textContent = '';
+    for (const column of board.columns) {
+      const button = el('button', 'btn btn-small', column.name);
+      button.type = 'button';
+      button.dataset.moveSelectionTo = column.id;
+      targets.appendChild(button);
+    }
+  }
+
+  /** Clear the ticked set and the bar. */
+  function clearSelection() {
+    if (!ui.selection.size) return;
+    ui.selection.clear();
+    applySelection();
+  }
+
+  /** The cards to act on: every ticked card, in board order. */
+  function selectedIds() {
+    return board.columns.flatMap((column) => column.cardIds.filter((id) => ui.selection.has(id)));
+  }
+
+  /**
+   * Move every ticked card into a column, in board order, through the same gate a single move uses.
+   *
+   * `applyMove` is the only function that relocates a card — ordering, the removal from the old
+   * column and `updatedAt` all live there, so a bulk move reuses it rather than repeating it. The
+   * gate is checked once for the batch: per-card dialogs for a twenty-card move would be useless,
+   * and `askConfirm` holds a single action slot, so a loop of them would clobber each other and
+   * only the last card's confirmation would survive.
+   */
+  function moveSelectionTo(columnId) {
+    const ids = selectedIds();
+    const to = getColumn(columnId);
+    if (!ids.length || !to) return;
+
+    const apply = () => {
+      commit(() => {
+        for (const id of ids) applyMove(id, columnId);
+        // cleared inside the commit so the board and the bar settle in one render
+        ui.selection.clear();
+      });
+      applySelection();
+      toast('ok', `MOVED ${ids.length} CARD${ids.length === 1 ? '' : 'S'} TO ${to.name}`);
+    };
+
+    // a gated column only prompts for the cards that are actually blocked; a card that is not
+    // blocked never asks
+    const blocked = to.gate ? ids.filter((id) => unfinishedBlockers(id).length) : [];
+    if (!blocked.length) {
+      apply();
+      return;
+    }
+
+    const body = el('div');
+    body.appendChild(
+      el(
+        'p',
+        null,
+        `${blocked.length} of the ${ids.length} card${ids.length === 1 ? '' : 's'} being moved ${
+          blocked.length === 1 ? 'is' : 'are'
+        } blocked:`
+      )
+    );
+    const list = el('ul');
+    for (const id of blocked) {
+      const target = card(id);
+      const column = columnOf(id);
+      list.appendChild(
+        el('li', null, `#${target.number} ${target.title} — ${column ? column.name : 'unplaced'}`)
+      );
+    }
+    body.appendChild(list);
+    body.appendChild(
+      el('p', null, `They move into "${to.name}" anyway, and stay flagged as overrides.`)
+    );
+    askConfirm({
+      title: 'BLOCKED CARDS → GATED COLUMN',
+      body,
+      okLabel: 'MOVE ANYWAY',
+      onOk: apply,
+    });
   }
 
   function buildCard(target) {
@@ -942,7 +1373,20 @@
     wrapper.dataset.cardId = target.id;
     wrapper.draggable = true;
     wrapper.dataset.blocked = blocked ? '1' : '0';
-    if (prio.color) wrapper.style.setProperty('--prio', prio.color);
+    wrapper.dataset.prio = String(target.priority);
+    // the inner dependency cane; the outer one is drawn by the card's own ::after. Two elements are
+    // needed because one cannot carry two masked rings, and a card can be both a blocker and
+    // blocked at once.
+    wrapper.appendChild(el('span', 'card-cane'));
+
+    // The tick that puts a card into a bulk move. It sits before the card's own button, so it is
+    // reachable by Tab and does not extend the region that opens the drawer.
+    const tick = el('input', 'card-tick');
+    tick.type = 'checkbox';
+    tick.checked = ui.selection.has(target.id);
+    tick.dataset.tickFor = target.id;
+    tick.setAttribute('aria-label', `Select #${target.number} ${target.title} for a bulk move`);
+    wrapper.appendChild(tick);
 
     const main = el('button', 'card-main');
     main.type = 'button';
@@ -950,16 +1394,19 @@
     main.dataset.cardId = target.id;
     main.setAttribute(
       'aria-label',
-      `${target.title} — ${column ? column.name : 'unplaced'}${blocked ? ', blocked' : ''}${
+      `#${target.number} ${target.title} — ${column ? column.name : 'unplaced'}${blocked ? ', blocked' : ''}${
         prio.value ? `, priority ${prio.label}` : ''
       }`
     );
+    const number = el('span', 'card-num', `#${target.number}`);
+    number.title = `Card #${target.number}`;
+    main.appendChild(number);
     main.appendChild(el('span', 'card-title', target.title));
 
     const meta = el('span', 'card-meta');
     if (blocked) {
       const chip = el('span', 'chip blocked', `BLOCKED ×${blockedBy.length}`);
-      chip.title = `Waiting on: ${blockedBy.map((b) => b.title).join(', ')}`;
+      chip.title = `Waiting on: ${blockedBy.map((b) => `#${b.number} ${b.title}`).join(', ')}`;
       meta.appendChild(chip);
     }
     if (blocked && column && column.gate) {
@@ -974,14 +1421,14 @@
     }
     if (target.due) {
       const delta = daysUntil(target.due);
-      let cls = 'chip';
+      let cls = 'chip due';
       let text = `DUE ${target.due.slice(5)}`;
       if (!isDone(target.id)) {
         if (delta < 0) {
-          cls = 'chip due-overdue';
+          cls = 'chip due due-overdue';
           text = `OVERDUE ${target.due.slice(5)}`;
         } else if (delta === 0) {
-          cls = 'chip due-today';
+          cls = 'chip due due-today';
           text = 'DUE TODAY';
         }
       }
@@ -990,23 +1437,34 @@
       meta.appendChild(chip);
     }
     if (dependents.length) {
-      const chip = el('span', 'chip', `BLOCKS ${dependents.length}`);
-      chip.title = `Blocks: ${dependents.map((d) => d.title).join(', ')}`;
+      const chip = el('span', 'chip blocks', `BLOCKS ${dependents.length}`);
+      chip.title = `Blocks: ${dependents.map((d) => `#${d.number} ${d.title}`).join(', ')}`;
       meta.appendChild(chip);
     }
     if (target.notes.trim()) {
-      const chip = el('span', 'chip', 'NOTE');
+      const chip = el('span', 'chip note', 'NOTE');
       chip.title = target.notes.trim().slice(0, 200);
       meta.appendChild(chip);
     }
-    for (const label of target.labels) {
-      const chip = el('span', 'chip label', label);
-      const dot = el('span', 'dot');
-      dot.style.background = labelColor(label);
-      chip.prepend(dot);
-      meta.appendChild(chip);
-    }
+    for (const label of target.labels) meta.appendChild(el('span', 'chip label', label));
     main.appendChild(meta);
+
+    // The wiring, in numbers: shown only while D is held, so the resting card stays quiet.
+    const allBlockers = blockersOf(target.id);
+    if (allBlockers.length || dependents.length) {
+      const refs = el('span', 'card-refs');
+      if (allBlockers.length) {
+        const up = el('span', 'ref-up', `←${allBlockers.map((b) => ` #${b.number}`).join('')}`);
+        up.title = `Blocked by ${allBlockers.map((b) => `#${b.number} ${b.title}`).join(', ')}`;
+        refs.appendChild(up);
+      }
+      if (dependents.length) {
+        const down = el('span', 'ref-down', `→${dependents.map((d) => ` #${d.number}`).join('')}`);
+        down.title = `Holds up ${dependents.map((d) => `#${d.number} ${d.title}`).join(', ')}`;
+        refs.appendChild(down);
+      }
+      main.appendChild(refs);
+    }
 
     wrapper.appendChild(main);
     return wrapper;
@@ -1031,7 +1489,7 @@
       return;
     }
     const column = columnOf(target.id);
-    $('card-kicker').textContent = `CARD / ${column ? column.name : 'UNPLACED'}`;
+    $('card-kicker').textContent = `CARD #${target.number} / ${column ? column.name : 'UNPLACED'}`;
 
     const titleInput = $('card-title');
     if (document.activeElement !== titleInput) titleInput.value = target.title;
@@ -1059,9 +1517,6 @@
       chip.type = 'button';
       chip.dataset.removeLabel = label;
       chip.title = `Remove label ${label}`;
-      const dot = el('span', 'dot');
-      dot.style.background = labelColor(label);
-      chip.prepend(dot);
       labelsHost.appendChild(chip);
     }
 
@@ -1091,7 +1546,7 @@
     for (const blocker of blockers) {
       const blockerColumn = columnOf(blocker.id);
       const done = isDoneColumn(blockerColumn);
-      const chip = el('button', 'chip', `${blocker.title} — ${done ? 'DONE' : blockerColumn ? blockerColumn.name : 'UNPLACED'} ×`);
+      const chip = el('button', 'chip', `#${blocker.number} ${blocker.title} — ${done ? 'DONE' : blockerColumn ? blockerColumn.name : 'UNPLACED'} ×`);
       chip.type = 'button';
       chip.dataset.removeBlocker = blocker.id;
       chip.title = done ? 'Completed blocker — remove the link' : 'Unfinished blocker — remove the link';
@@ -1106,7 +1561,7 @@
     for (const dependent of dependents) {
       const dependentColumn = columnOf(dependent.id);
       blocksHost.appendChild(
-        el('span', 'chip', `${dependent.title} — ${dependentColumn ? dependentColumn.name : 'UNPLACED'}`)
+        el('span', 'chip', `#${dependent.number} ${dependent.title} — ${dependentColumn ? dependentColumn.name : 'UNPLACED'}`)
       );
     }
 
@@ -1269,8 +1724,45 @@
       host.appendChild(row);
     });
 
+    renderViewOptions();
     renderStorageInfo();
   }
+
+  function renderViewOptions() {
+    const densityHost = $('settings-density');
+    densityHost.textContent = '';
+    for (const option of [
+      { value: 'compact', label: 'COMPACT', title: 'Densest spacing — fits the most cards per screen' },
+      { value: 'normal', label: 'NORMAL', title: 'More breathing room between cards and columns' },
+    ]) {
+      const button = el('button', null, option.label);
+      button.type = 'button';
+      button.dataset.density = option.value;
+      button.title = option.title;
+      button.setAttribute('aria-pressed', view.density === option.value ? 'true' : 'false');
+      densityHost.appendChild(button);
+    }
+
+    const host = $('settings-view');
+    host.textContent = '';
+    for (const toggle of VIEW_TOGGLES) {
+      const row = el('label', 'check view-row');
+      row.title = toggle.title;
+      const input = el('input');
+      input.type = 'checkbox';
+      input.checked = !!view[toggle.key];
+      input.dataset.view = toggle.key;
+      row.appendChild(input);
+      row.appendChild(document.createTextNode(toggle.label));
+      host.appendChild(row);
+    }
+  }
+
+  const ORIGIN_LABEL = {
+    sample: 'SAMPLE BOARD (seeded, not yet edited)',
+    storage: 'RESTORED FROM STORAGE',
+    import: 'IMPORTED FROM A FILE',
+  };
 
   function renderStorageInfo() {
     let bytes = null;
@@ -1282,12 +1774,36 @@
     }
     const lampState = $('storage-lamp').dataset.state || 'ready';
     $('settings-storage').textContent = [
+      `BOARD  ${ORIGIN_LABEL[boardOrigin] || 'EDITED IN THIS BROWSER'}`,
+      `CARDS  ${Object.keys(board.cards).length}`,
       `KEY  ${STORAGE_KEY}`,
+      `VIEW  ${VIEW_KEY}`,
       bytes === null ? 'SIZE  UNAVAILABLE' : `SIZE  ${bytes.toLocaleString()} BYTES`,
       `LAST WRITE  ${lastWriteTime || '—'}`,
       `STATUS  ${lampState.toUpperCase()}`,
       `RECOVERY COPY  ${CORRUPT_KEY}`,
     ].join('\n');
+  }
+
+  /**
+   * Close a dialog when its backdrop is clicked.
+   *
+   * A click on `::backdrop` is delivered to the dialog element itself, so the test is whether the
+   * point is inside the dialog's own box: the drawers are right-aligned panels, and the whole area
+   * beside them is backdrop. Pointer events are compared rather than `event.target`, which is the
+   * dialog either way and so cannot distinguish the two.
+   */
+  function bindBackdropClose(dialogId) {
+    const dialog = $(dialogId);
+    dialog.addEventListener('click', (event) => {
+      const box = dialog.getBoundingClientRect();
+      const inside =
+        event.clientX >= box.left &&
+        event.clientX <= box.right &&
+        event.clientY >= box.top &&
+        event.clientY <= box.bottom;
+      if (!inside) dialog.close();
+    });
   }
 
   // ==========================================================================
@@ -1307,6 +1823,84 @@
     ok.classList.toggle('danger', !!danger);
     ok.classList.toggle('primary', !danger);
     $('confirm-dialog').showModal();
+  }
+
+  // ==========================================================================
+  // Reset board — the one irreversible action, gated on a typed word
+  // ==========================================================================
+
+  const RESET_WORD = 'delete';
+
+  function resetArmed() {
+    return $('reset-word').value.trim().toLowerCase() === RESET_WORD;
+  }
+
+  function syncResetGate() {
+    $('reset-ok').disabled = !resetArmed();
+  }
+
+  function openResetDialog() {
+    const count = Object.keys(board.cards).length;
+    if (!count) return; // nothing to delete: the button is disabled in this state anyway
+    $('reset-summary').textContent =
+      count === 1
+        ? 'This deletes the one card on this board, and any dependency it is part of.'
+        : `This deletes all ${count} cards on this board, and every dependency between them.`;
+    const word = $('reset-word');
+    word.value = '';
+    syncResetGate();
+    $('reset-dialog').showModal();
+    word.focus();
+  }
+
+  function doResetBoard() {
+    if (!resetArmed()) return;
+    const removed = Object.keys(board.cards).length;
+    // nothing may keep pointing at a card that no longer exists — and a half-typed card title is
+    // pending work that the wipe should end rather than leave sitting in an emptied column
+    ui.activeCardId = null;
+    ui.dragId = null;
+    ui.chainId = null;
+    ui.inlineAdd = null;
+    commit(() => {
+      board.cards = {};
+      // numbering restarts with the empty board. The invariant is that a number is never reused
+      // while a card carrying it could still be referenced; with no cards left there is nothing
+      // to point at, so the next card is #1 again.
+      board.nextNumber = 1;
+    });
+    boardOrigin = null;
+    $('reset-dialog').close();
+    toast('warn', `BOARD RESET — ${removed} CARD${removed === 1 ? '' : 'S'} DELETED`, 8000);
+  }
+
+  /**
+   * Put the sample board back. Reachable when the board is empty, so an emptied board is not a dead
+   * end: without this the only route back to the sample was clearing storage by hand, which is not
+   * something a user of a board app should ever have to do.
+   */
+  function loadSampleBoard() {
+    const current = Object.keys(board.cards).length;
+    const apply = () => {
+      const sample = seedBoard();
+      commit(() => {
+        board = sample;
+      });
+      boardOrigin = 'sample';
+      ui.activeCardId = null;
+      ui.inlineAdd = null;
+      toast('info', 'SAMPLE BOARD RESTORED');
+    };
+    if (!current) {
+      apply();
+      return;
+    }
+    const body = el('div');
+    body.appendChild(
+      el('p', null, `Replace the ${current} card${current === 1 ? '' : 's'} on this board with the 11-card sample?`)
+    );
+    body.appendChild(el('p', null, 'Your columns, board name and view options are kept.'));
+    askConfirm({ title: 'LOAD SAMPLE BOARD', body, okLabel: 'REPLACE', danger: false, onOk: apply });
   }
 
   // ==========================================================================
@@ -1393,11 +1987,11 @@
       danger: false,
       onOk: () => {
         board = result.board;
+        boardOrigin = 'import';
         ui.activeCardId = null;
         ui.inlineAdd = null;
-        ui.labels = new Set();
-        ui.query = '';
-        ui.blockedOnly = false;
+        clearFilters();
+        ui.filterOpen = false;
         if ($('card-dialog').open) $('card-dialog').close();
         if ($('settings-dialog').open) $('settings-dialog').close();
         saveBoard();
@@ -1429,6 +2023,11 @@
     if (!body) return null;
     const columnId = body.dataset.columnId;
     const cardEl = event.target.closest('.card');
+    // Only the grabbed card is skipped: it is the one physically under the pointer at the start, so
+    // it can never be its own landmark. Every other card — including the rest of a dragged group —
+    // still marks where the drop lands, because a moving card is a perfectly good position to
+    // insert relative to. Excluding the whole group would leave a group drag with no feedback at
+    // all as soon as the pointer crossed another member of it.
     if (cardEl && cardEl.dataset.cardId !== ui.dragId) {
       const rect = cardEl.getBoundingClientRect();
       const before = event.clientY < rect.top + rect.height / 2;
@@ -1443,12 +2042,25 @@
     host.addEventListener('dragstart', (event) => {
       const cardEl = event.target.closest('.card');
       if (!cardEl) return;
-      ui.dragId = cardEl.dataset.cardId;
-      cardEl.classList.add('dragging');
+      const id = cardEl.dataset.cardId;
+      // dragging a ticked card carries the whole ticked set: that is the point of ticking them, and
+      // it means the group travels by the gesture the user already knows. Dragging an unticked card
+      // moves that card alone, and drops any ticks so the two cannot be confused.
+      if (ui.selection.has(id)) {
+        ui.dragIds = selectedIds();
+      } else {
+        ui.selection.clear();
+        applySelection();
+        ui.dragIds = [id];
+      }
+      ui.dragId = id;
+      for (const node of host.querySelectorAll('.card[data-picked]')) node.classList.add('dragging');
+      if (!ui.selection.has(id)) cardEl.classList.add('dragging');
       if (event.dataTransfer) {
-        event.dataTransfer.setData('text/plain', ui.dragId);
+        event.dataTransfer.setData('text/plain', ui.dragIds.join(','));
         event.dataTransfer.effectAllowed = 'move';
       }
+      $('selection-count').textContent = `${ui.dragIds.length} SELECTED`;
     });
 
     host.addEventListener('dragover', (event) => {
@@ -1469,16 +2081,23 @@
       if (!ui.dragId) return;
       event.preventDefault();
       const target = dropTargetFrom(event);
-      const dragged = ui.dragId;
+      const group = ui.dragIds && ui.dragIds.length ? ui.dragIds : [ui.dragId];
       ui.dragId = null;
+      ui.dragIds = [];
       clearDropMarkers();
       for (const node of host.querySelectorAll('.dragging')) node.classList.remove('dragging');
       if (!target) return;
-      attemptMove(dragged, target.columnId, target.referenceId, target.where);
+      if (group.length > 1) {
+        // a group drop runs the same gated path as the bulk bar, so it cannot slip past the gate
+        moveSelectionTo(target.columnId);
+        return;
+      }
+      attemptMove(group[0], target.columnId, target.referenceId, target.where);
     });
 
     host.addEventListener('dragend', () => {
       ui.dragId = null;
+      ui.dragIds = [];
       clearDropMarkers();
       for (const node of host.querySelectorAll('.dragging')) node.classList.remove('dragging');
     });
@@ -1505,10 +2124,45 @@
       renderSettings();
       $('settings-dialog').showModal();
     });
+    $('settings-sample').addEventListener('click', () => {
+      $('settings-dialog').close();
+      loadSampleBoard();
+    });
+    $('settings-reset').addEventListener('click', () => {
+      $('settings-dialog').close();
+      openResetDialog();
+    });
+    $('empty-sample').addEventListener('click', () => loadSampleBoard());
+    $('selection-targets').addEventListener('click', (event) => {
+      const button = event.target.closest('[data-move-selection-to]');
+      if (button) moveSelectionTo(button.dataset.moveSelectionTo);
+    });
+    $('selection-clear').addEventListener('click', clearSelection);
     $('settings-close').addEventListener('click', () => $('settings-dialog').close());
     $('settings-dialog').addEventListener('close', () => flushSettingsFields());
+    bindBackdropClose('settings-dialog');
+    bindBackdropClose('card-dialog');
     $('settings-add-column').addEventListener('click', addColumn);
     $('settings-name').addEventListener('change', (event) => setBoardName(event.target.value));
+
+    $('settings-density').addEventListener('click', (event) => {
+      const button = event.target.closest('button[data-density]');
+      if (!button) return;
+      view.density = button.dataset.density;
+      applyView();
+      saveView();
+      renderSettings();
+    });
+    $('settings-view').addEventListener('change', (event) => {
+      const input = event.target.closest('input[data-view]');
+      if (!input) return;
+      view[input.dataset.view] = input.checked;
+      applyView();
+      saveView();
+      // the header reads the view too — the priority legend follows the rail toggle — so a view
+      // change has to repaint it, not just set the root attributes
+      renderHeader();
+    });
 
     $('settings-columns').addEventListener('click', (event) => {
       const button = event.target.closest('button[data-act]');
@@ -1529,43 +2183,153 @@
       else if (act === 'done') toggleColumnFlag(columnId, 'done', input.checked);
     });
 
+    // Hold D: reveal the wiring. Key repeat, typing targets and open dialogs are all ignored,
+    // and a window blur releases the key so alt-tabbing mid-hold cannot strand the overlay.
+    const releaseDeps = () => {
+      if (!ui.depsHeld) return;
+      ui.depsHeld = false;
+      applyChainHighlight();
+    };
+    document.addEventListener('keydown', (event) => {
+      if (event.key !== 'd' && event.key !== 'D') return;
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      const target = event.target;
+      if (target && target.closest && target.closest('input, textarea, select, [contenteditable="true"]')) return;
+      if (document.querySelector('dialog[open]')) return;
+      if (ui.depsHeld) return;
+      ui.depsHeld = true;
+      applyChainHighlight();
+    });
+    document.addEventListener('keyup', (event) => {
+      if (event.key === 'd' || event.key === 'D') releaseDeps();
+    });
+    // alt-tabbing mid-hold must not strand the overlay: the keyup never arrives if the window
+    // loses focus while D is down
+    window.addEventListener('blur', releaseDeps);
+
+    /**
+     * Ctrl/Cmd is the bulk-selection mode. Holding it reveals the ticks and turns a click anywhere
+     * on a card into a tick; releasing it clears the selection, so a group can never be left armed
+     * by accident. The whole gesture is therefore: hold Ctrl, click the cards, drag any one of them.
+     */
+    const releaseCtrl = () => {
+      if (!ui.ctrlHeld) return;
+      ui.ctrlHeld = false;
+      ui.selection.clear();
+      applySelection();
+    };
+    document.addEventListener('keydown', (event) => {
+      if (event.key !== 'Control' && event.key !== 'Meta') return;
+      if (ui.ctrlHeld) return;
+      ui.ctrlHeld = true;
+      applySelection();
+    });
+    document.addEventListener('keyup', (event) => {
+      if (event.key === 'Control' || event.key === 'Meta') releaseCtrl();
+    });
+    // alt-tabbing mid-hold must not strand either mode
+    window.addEventListener('blur', releaseCtrl);
+
+    // C puts a new card in the first column, which is where unfiled work belongs — the same thing
+    // the column's own + ADD CARD plate does, without the trip to the mouse
+    document.addEventListener('keydown', (event) => {
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      const target = event.target;
+      if (target && target.closest && target.closest('input, textarea, select, [contenteditable="true"]')) return;
+      if (document.querySelector('dialog[open]')) return;
+      if (event.key !== 'c' && event.key !== 'C') return;
+      const first = board.columns[0];
+      if (!first) return;
+      event.preventDefault();
+      ui.inlineAdd = { columnId: first.id, value: '' };
+      render();
+    });
+
     // filters
     $('filter-query').addEventListener('input', (event) => {
       ui.query = event.target.value;
-      renderBoard();
-    });
-    $('filter-blocked').addEventListener('click', () => {
-      ui.blockedOnly = !ui.blockedOnly;
       renderFilters();
       renderBoard();
     });
-    $('filter-clear').addEventListener('click', () => {
-      ui.query = '';
-      ui.labels = new Set();
-      ui.blockedOnly = false;
+    $('filter-toggle').addEventListener('click', () => {
+      ui.filterOpen = !ui.filterOpen;
       renderFilters();
-      renderBoard();
+      if (ui.filterOpen) {
+        const first = $('filter-panel').querySelector('button');
+        if (first) first.focus({ preventScroll: true });
+      } else {
+        $('filter-toggle').focus();
+      }
     });
-    $('label-filters').addEventListener('click', (event) => {
-      const chip = event.target.closest('button[data-label]');
-      if (!chip) return;
-      const label = chip.dataset.label;
-      if (ui.labels.has(label)) ui.labels.delete(label);
-      else ui.labels.add(label);
+    $('filter-panel').addEventListener('click', (event) => {
+      const chip = event.target.closest('[data-filter-key]');
+      if (chip) {
+        toggleFilterKey(chip.dataset.filterKey);
+        return;
+      }
+      if (event.target.closest('[data-act="clear"]')) {
+        clearFilters();
+        renderFilters();
+        renderBoard();
+      }
+    });
+    // Popover dismissal: click anywhere outside, or press Escape from anywhere. Both are
+    // suppressed while a dialog is open, which owns its own Escape handling. The outside-click
+    // check runs in the capture phase, because a click on a chip re-renders the pane and detaches
+    // the very node the bubble-phase check would inspect.
+    document.addEventListener(
+      'click',
+      (event) => {
+        if (!ui.filterOpen) return;
+        if (event.target.closest && event.target.closest('#filter-panel, #filter-toggle')) return;
+        ui.filterOpen = false;
+        renderFilters();
+      },
+      true
+    );
+    document.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape' || !ui.filterOpen) return;
+      if (document.querySelector('dialog[open]')) return;
+      ui.filterOpen = false;
       renderFilters();
-      renderBoard();
+      $('filter-toggle').focus();
     });
 
     // board — add card, open card, chain highlight
     const host = $('board');
+    host.addEventListener('change', (event) => {
+      const tick = event.target.closest('.card-tick');
+      if (!tick) return;
+      const id = tick.dataset.tickFor;
+      if (tick.checked) ui.selection.add(id);
+      else ui.selection.delete(id);
+      applySelection();
+    });
     host.addEventListener('click', (event) => {
+      const main = event.target.closest('.card-main');
+      const cardEl = event.target.closest('.card');
+      // Ctrl turns a click anywhere on a card into a tick, which is why the click target is the card
+      // itself rather than the checkbox: the box is the read-out, the card is the hit area
+      if (cardEl && (ui.ctrlHeld || event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        event.stopPropagation();
+        const id = cardEl.dataset.cardId;
+        if (ui.selection.has(id)) ui.selection.delete(id);
+        else ui.selection.add(id);
+        applySelection();
+        return;
+      }
+      // a bare click on the tick (reachable by Tab, or with Ctrl already down) must not open the card
+      if (event.target.closest('.card-tick')) {
+        event.stopPropagation();
+        return;
+      }
       const addButton = event.target.closest('[data-add-to]');
       if (addButton) {
         ui.inlineAdd = { columnId: addButton.dataset.addTo, value: '' };
         render();
         return;
       }
-      const main = event.target.closest('.card-main');
       if (main) openCard(main.dataset.cardId);
     });
     host.addEventListener('mouseover', (event) => {
@@ -1714,6 +2478,26 @@
       if (action) action();
     });
 
+    // the pane is anchored to the trigger, so it follows the bar when the bar scrolls or the window
+    // resizes — both of which move the trigger without closing the pane
+    window.addEventListener("resize", positionFilterPanel);
+    document.querySelector(".topbar").addEventListener("scroll", positionFilterPanel, { passive: true });
+
+    // reset dialog: the confirm button is armed by the word, not by a second click
+    $('btn-reset').addEventListener('click', openResetDialog);
+    $('reset-cancel').addEventListener('click', () => $('reset-dialog').close());
+    $('reset-ok').addEventListener('click', doResetBoard);
+    $('reset-word').addEventListener('input', syncResetGate);
+    $('reset-word').addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      if (resetArmed()) doResetBoard();
+    });
+    $('reset-dialog').addEventListener('close', () => {
+      $('reset-word').value = '';
+      syncResetGate();
+    });
+
     // cross-tab guard: never silently lose a board written elsewhere
     window.addEventListener('storage', (event) => {
       if (event.key !== STORAGE_KEY) return;
@@ -1741,7 +2525,9 @@
       ...extra,
     });
     const cards = {};
+    let nextNumber = 1;
     const add = (cardDef) => {
+      cardDef.number = nextNumber++;
       cards[cardDef.id] = cardDef;
     };
     add(make('c-shell', 'Design tokens + app shell', { priority: 2, labels: ['UI'], notes: 'UNIT-02 palette lifted from ambient-noise-app-v2.\nZero radius, hard 1px rules, no shadows.' }));
@@ -1760,13 +2546,14 @@
       version: SCHEMA_VERSION,
       name: 'MAIN BOARD',
       columns: [
-        { ...DEFAULT_COLUMNS[0], cardIds: ['c-cols', 'c-export'] },
-        { ...DEFAULT_COLUMNS[1], cardIds: ['c-cycle', 'c-chain', 'c-filter'] },
-        { ...DEFAULT_COLUMNS[2], cardIds: ['c-graph', 'c-drawer', 'c-gate', 'c-drag'] },
-        { ...DEFAULT_COLUMNS[3], cardIds: ['c-store'] },
-        { ...DEFAULT_COLUMNS[4], cardIds: ['c-shell'] },
+        { ...DEFAULT_COLUMNS[0], cardIds: ['c-shell', 'c-store'] },
+        { ...DEFAULT_COLUMNS[1], cardIds: ['c-graph', 'c-cycle', 'c-gate'] },
+        { ...DEFAULT_COLUMNS[2], cardIds: ['c-drawer', 'c-chain', 'c-cols', 'c-export'] },
+        { ...DEFAULT_COLUMNS[3], cardIds: ['c-filter'] },
+        { ...DEFAULT_COLUMNS[4], cardIds: ['c-drag'] },
       ],
       cards,
+      nextNumber,
     };
   }
 
@@ -1777,9 +2564,17 @@
   function boot() {
     bind();
     const stored = readStored();
+    const storedView = loadView();
+    view = storedView.view;
+    applyView();
+    if (storedView.problem) {
+      saveView();
+      toast('warn', `VIEW OPTIONS RESET TO DEFAULTS — ${storedView.problem}`, 12000);
+    }
 
     if (stored.kind === 'ok') {
       board = stored.board;
+      boardOrigin = 'storage';
       if (stored.repairs.length) {
         saveBoard();
         toast('warn', `STORED BOARD REPAIRED — ${stored.repairs.join('; ')}`, 12000);
@@ -1788,15 +2583,18 @@
       }
     } else if (stored.kind === 'empty') {
       board = seedBoard();
+      boardOrigin = 'sample';
       saveBoard();
       toast('info', 'SAMPLE BOARD LOADED — EDIT IT OR DELETE THE CARDS');
     } else if (stored.kind === 'unavailable') {
       board = seedBoard();
+      boardOrigin = 'sample';
       setLamp('error', stored.reason);
       toast('error', `STORAGE UNAVAILABLE (${stored.reason}) — WORK IS IN MEMORY ONLY`, 15000);
     } else {
       const kept = quarantine(stored.raw);
       board = seedBoard();
+      boardOrigin = 'sample';
       saveBoard();
       toast(
         'error',

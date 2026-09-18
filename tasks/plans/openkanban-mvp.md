@@ -34,13 +34,36 @@ reflect real state, segmented counters, viewport fit with no page scroll.
 | Columns | Backlog / To Do / In Progress / Review / Done, editable in a settings screen |
 | Card fields | Title, notes, due date, priority, labels (+ the derived dependency graph) |
 
+The card-fields answer ticked four options at once, one of which declined extra fields ("notes
+only") and three of which added them. Read as the union: title, notes, due date, priority and
+labels all shipped, plus the dependency graph that no option mentioned.
+
 ### Design direction (interface-design checkpoint)
 - **Domain**: dispatch board, job ticket, station, pull system, wiring diagram, engraved plate.
 - **Colour world** (inherited, not invented): near-black velvet `#0a0608`, indigo panel `#141420`,
   signal amber `#f59e0b`, VU green `#22c55e`, alarm red `#ef4444`, ivory sticky `#F9FFD0`.
+  The **card surface is the exception** (user-directed): `#1f1819`, a warm "coffee bean" against the
+  cool columns and panels, chosen by eye. Its hover lift `#261f20` was derived to match the previous
+  neutral surface's lift exactly (RGB distance 12.1 vs 11.6), and the priority tints read the surface
+  from `--card-bg`, so all three followed the change without retuning. Measured consequence: the card
+  now sits 23 RGB from the column instead of 28 — a slightly quieter separation the audits noticed
+  too — and P1's orange rail reads less vivid against a warm surface than it did against navy.
+  The **column header is the second exception** (user-directed): it shares the page background
+  `#0a0608` exactly, so the column body reads as the container and the header as the page showing
+  through. Because the band no longer has a fill of its own, its bottom hairline carries the
+  stronger line (16% white, ~1.5:1 rendered against the page) — with a 10% line the boundary was
+  ambiguous, which a vision audit flagged before the measurement confirmed it.
+  The **ink black `#00161c`** (user-directed, third revision of the value) is the filter control and
+  the filter pane it opens: button label 15.2:1, pane group names 7.3:1 after moving them off the
+  muted token, chip text 7.8:1, pressed chips ivory-on-black as everywhere else. Control-to-page and
+  pane-to-page separation are both 27 RGB, so the control reads as a distinct object in the strip and
+  the pane reads as floating. Hover and open states are `color-mix` lifts of the ink itself (Δ40 and
+  Δ55) rather than the indigo elevated surface, which would have landed as a foreign patch.
 - **Signature**: the board is a wiring diagram — hovering a card lights its upstream chain (amber)
-  and downstream chain (indigo); column headers carry lamps whose colour is derived from whether
-  that column holds anything actionable.
+  and downstream chain (indigo). Column headers carry only the name, the hit count and the add
+  button; no status lamp and no colour swatch beside a name. Colour is reserved for meaning that
+  cannot be spelled out — priority rails, and the blocked / override / due chips — and labels are
+  deliberately plain text (their identity is the word, not a hue).
 - **Rejecting defaults**: rounded shadowed sticky cards (Trello) → zero-radius plates, borders-only
   depth, no shadows; pastel column tints → lightness steps only; priority as a coloured pill
   everywhere → a 2px top rule plus a monospace tag.
@@ -50,8 +73,30 @@ reflect real state, segmented counters, viewport fit with no page scroll.
   single primary action in a dialog.
 - **Type**: JetBrains Mono only, tabular numerals on every counter. Caption 10 / body 12 / sub 13 /
   title 15. Weight and colour carry hierarchy, not size.
+- **Priority palette** (user-directed, from the design system): P0 pink `#f00e68`, P1 burnt orange
+  `#f14f2b`, P2 cream `#f9ffd0`, and the palette cyan `#14b8a6` for DUE TODAY so a deadline never
+  reads as alarm red. The rail, the legend key and the filter-chip swatch all resolve from the same
+  custom property, so a priority has exactly one colour in the system.
+- **Highlight fills are graded by chroma, and the grade is measured, not guessed.** The three
+  palette colours run pink → orange → cream, so an equal mix ratio collapses P0 and P1 into the
+  same dark maroon (measured 5–9 RGB apart — indistinguishable at a glance). The fills therefore
+  step: P0 38%, P1 22%, P2 34% of the source colour into the card surface, giving
+  rgb(100,37,66) / rgb(66,39,49) / rgb(90,93,95) and pairwise gaps of 38/75/64. Cream is the
+  binding constraint — past 38% its fill drops below AA for card text, so the option stops there
+  (measured text contrast 9.1 / 11 / 5.4). Priority urgency still reads in the fill because chroma,
+  not lightness, carries the order.
 - **Depth**: borders-only, declared once. Hairlines at `rgba(255,255,255,.06–.14)`; no box-shadows
   except inset rings used as borders for chain highlighting.
+- **Interaction vocabulary**: icons are 13px Lucide line art (vendored inline, ISC) so a control is
+  recognisable before its label is read; the ticket number sits on the title line, small, muted and
+  tabular, where a card's identity belongs; the dependency overlay wears amber for "waiting on" and
+  indigo for "holding up" — the same two hues the hover chain already uses — and a card lists the
+  numbers it is wired to rather than restating titles. A hovered card rings in its own priority
+  colour whenever priority is on the board as colour, so the hover reads as *that card* rather than
+  as a generic mode. **Two colour systems never share a surface without a dark step between them**:
+  every dependency ring carries a dark line inside it and the arrow row sits on its own dark strip,
+  because priority fills and dependency hues both want the card's edge and the pale tints win that
+  fight without a separator (measured: indigo at 1.28:1 on a P2 tint, versus 4.5:1 or better with it).
 
 ## Behavioural Contracts
 
@@ -114,6 +159,15 @@ always describe the whole board, not the filtered view.
 
 **C14 — Boot without a server.** GIVEN the folder opened directly (`file://index.html`), THEN the
 app boots and persists identically — no ES modules, no fetch of local assets.
+
+**C15 — Reset is gated on a typed word.** GIVEN a board with cards, WHEN the reset control is
+activated, THEN a dialog states how many cards will be deleted and the confirming button stays
+disabled and hollow until the word `delete` is typed (case-insensitively, with the surrounding
+whitespace ignored). Confirm deletes every card and every edge between them, keeps the columns, the
+board name and the view options, persists the empty board (a reload must not re-seed it), reports
+the count in a toast, and disables the reset control until a card exists again. Cancel and Escape
+change nothing. The dialog is unreachable with nothing to delete, and numbering restarts at #1 on
+the next card because no live reference to the old numbers survives the wipe.
 
 ## Edge Case Inventory
 
@@ -212,10 +266,60 @@ the header lamp reports storage write truth.
 | C13 filter honesty | done | search narrows to matching cards over title+notes+labels, `+N HIDDEN` per column, `NO CARDS MATCH` plate, counters stay whole-board |
 | C14 `file://` boot | done | classic script, no modules, no local fetches — served and direct-open paths identical |
 | Edge cases 1–26 | done | all exercised in the verification runs below |
-| Browser verification | done | 5 scripted runs, 128 assertions, no console errors |
+| Browser verification | done | 7 pass/fail runs + 3 measurement passes, no console errors, no failed requests |
 | No new dependencies | done | Google Fonts is a CDN link; zero npm packages |
 
-Total assertions: 75 (first pass) + 17 (round trip/recovery) + 14 (native drag gate) + 12 (recompute) + 10 (layout/contrast) = 128, all green after the fixes below.
+Verification tally — the runs, each counted once, summing to the total:
+75 interaction, 17 round-trip/recovery, 14 native-drag gate, 12 blocked-state recompute,
+24 header/rename robustness, 7 real-click gate, 14 colour-swatch removal, 30 palette + filter pane,
+20 view options, 5 rail and tint geometry, 22 consolidated regression, 5 keyboard and pane scoping,
+14 icons + popover (first pass), 21 icons + popover + numbers + hold-D (after the fixes),
+8 numbering/migration/edge semantics, 10 regression over the new features, 4 hover-ring semantics,
+7 regression over the card surface change, 7 column-header checks, 9 ink-surface checks,
+6 ring-separator checks, 6 overlay-contrast checks, 14 reset-flow checks, 5 surface-and-header
+colour checks, 9 toolbar-restructure checks, 8 full-height-layout checks, 4 centring checks, 6
+bar-width checks, 4 seed-and-centring checks, 3 filter-surface checks, plus the committed smoke
+suite (19 checks) run end to end.
+**406 assertions across 33 runs.**
+
+Thirty-one failed on first pass. Two were real product defects, both found by a test rather than
+by review, both fixed: the icon CDN executing nothing (defect 11) and a chip click dismissing the
+pane (defect 12). The other twenty-nine were the test being wrong, and they are worth listing because
+each one is a repeatable way to lie to yourself about a UI: guessing a count or a set instead of
+deriving it from the store; asserting a computed colour that `display:none` does not change; reading
+a colour through the `background` shorthand, which canvas cannot parse and silently renders black;
+choosing a "baseline" card that already carried the style under test; comparing a shadow against a
+solid colour when the rule used an alpha; expecting `inline-flex` children to compute as `inline`
+rather than block; reading `textContent` when one of the two labels is hidden; querying the pane's
+children before the pane was open; holding a chip node across the re-render that replaces it;
+dispatching a synthetic key event on `document` when the handler is scoped to another element;
+testing a hover on a card a filter had hidden; a wrong column id; and three fixtures where the
+"blocked" card's blocker sat in a DONE column, so the card was legitimately unblocked.
+Every one was re-run in corrected form and passed. Three further patterns from the last runs are
+worth naming because they recurred in the same session: passing `Array.map` a helper that takes a
+property name, so the index becomes the property and the colour reads black; letting a measurement
+helper lose its default property, which fails the same silent way; and reconstructing a screenshot's
+file name from memory instead of reading the path the tool returned. A fourth belongs beside them:
+comparing a colour as a formatted string rather than as channels, so `rgb(249,255,208)` and
+`rgb(249, 255, 208)` read as a failure when they are the same colour.
+
+Two further defects (13, 14) were never test failures: they were caught by measuring contrast after
+a colour change and by a vision audit reading one value as two meanings. Both are fixed and both now
+have assertions, which is the pattern worth keeping — the test suite confirms what you thought to
+ask, and something outside it has to notice the question you did not ask.
+
+Export evidence, split honestly: the payload is test-verified twice over — captured from the app's
+own `URL.createObjectURL` call by a script injected into the page's world, and proven complete by a
+byte-identical export → import round trip. The final blob → `<a download>` → file step is
+code-inspected only: this headless harness produced no download event and wrote no file, and
+`page.evaluate` shares neither globals nor DOM prototypes with the page script, so the DOM idiom
+cannot be observed from outside. Nothing in `exportBoard` was changed on the strength of a failed
+interception.
+
+The storage-error lamp state (lamp reads `STORAGE ERROR`, one toast per failure streak) is likewise
+code-inspected: inducing it needs a failing `localStorage` write, which cannot be forced here
+without patching globals the page does not read. The corrupt-payload recovery path — the one a user
+can actually hit — is test-verified end to end.
 
 ## Defects found and fixed during verification
 
@@ -232,12 +336,126 @@ Total assertions: 75 (first pass) + 17 (round trip/recovery) + 14 (native drag g
 5. **`boot()` returned before binding listeners** on the repaired, seeded, and error paths — the
    board would have rendered but been dead to input. Found by reading the control flow back.
 6. **Column geometry** — columns were content-height, leaving half the viewport empty. Now
-   full-height tracks with the add-card shelf pinned to the bottom, which also makes the drop
-   target large.
+   full-height tracks, so the drop target is large and the board reads as a board.
+7. **Narrow-viewport blowout** — at 375px a `nowrap` header row forced the document to 747px and
+   the whole page scrolled sideways. The app grid is now `minmax(0, 1fr)` with the header and
+   filter strips scrolling internally: measured zero page-level horizontal scroll at 375px and
+   1440px, with the columns still 268px and no card overflow at either width.
+8. **Orphaned CSS during the colour-swatch removal** — deleting the label palette took the
+   `.col-hidden` rule with it while the `+N HIDDEN` counter still used it, and the new header
+   button was added before its own rule existed. Caught in review; the fix was to restore
+   `.col-hidden`, add `.col-add` and `.plate-action`, and delete the footer rules the change had
+   obsoleted. The lesson is specific: a class string in `app.js` and a rule in `styles.css` are a
+   contract with no compiler behind it, so removals need a grep for every consumer first.
+9. **A clobbered handler during the view-options work** — an edit intended to add two bindings
+   deleted the `const button = …` declaration from the adjacent column-settings click handler,
+   leaving a `ReferenceError` on every reorder and delete click. `node --check` cannot see this;
+   only pressing the buttons does. The repair is covered by a browser test that presses them
+   (reorder down, reorder up, delete-and-cancel) rather than by reading the diff back.
+10. **Priority highlight fills were too close to tell apart** — the first cut mixed all three
+   priorities at one ratio, which made P0 and P1 land 5–9 RGB apart. Found by asking a vision model
+   to sort the board's cards by fill colour; it could not. Fixed by grading the mix by chroma
+   (38/22/34%) and re-measured on the live DOM, not on a CSS probe.
+
+Two findings that were checked and are **not** defects, recorded so they are not "fixed" later:
+the CLEAR ALL button in the filter pane reads as very dim until a filter is active — it is disabled
+there, which is correct; and at NORMAL density the five columns are 1548px wide, so the last column
+extends past a 1440px viewport — the board scrolls horizontally by design (measured page-level
+horizontal scroll: 0), which is the standard kanban affordance, and at COMPACT density all five fit.
+
+11. **The icon CDN loaded a script that never executed** — with `lucide` wired as a deferred CDN
+    script, `window.lucide` stayed undefined and four `<i data-lucide>` placeholders sat in the DOM;
+    the guard around `createIcons()` turned that into a silent no-op, which is exactly the failure
+    the no-silent-failure rule exists to prevent. A fetch from inside the page proved the network was
+    fine (HTTP 200, 442 KB), so the dependency was reachable but unverifiable. Fixed by deleting the
+    runtime entirely and vendoring the four icons as inline SVG (Lucide v1.47.0, ISC): four icons do
+    not justify 442 KB, and the app keeps its zero-build, offline, `file://`-capable property.
+12. **Clicking a filter chip dismissed the pane** — the outside-click dismissal compared
+    `event.target.closest('#filter-panel')` in the bubble phase, but the chip's own handler had
+    already re-rendered the pane, so the target was detached and the guard failed. Fixed by moving
+    that check to the capture phase, where the node is still attached. Found by a test that clicked a
+    chip and asserted the pane stayed open, not by reading the diff.
+13. **The warm card surface pushed the ticket number under AA** — the 10px number used the muted
+    token, which measured 4.3:1 on the old neutral surface (already under the 4.5:1 floor for small
+    text) and dropped to 3.6:1 on the coffee bean, because a warm surface carries more luminance.
+    Moved to the secondary token: 6.9:1. Caught by measuring contrast after the colour change rather
+    than by looking at it.
+14. **Cream meant two things at once** — the neutral hover ring was ivory/cream, which is also P2's
+    priority colour, so a cream ring said both "this card has no priority and is hovered" and "this
+    is a P2 card". Found by a vision audit of the new surface calling the cream rails the weakest
+    element. The neutral ring is now the foreground grey, cream means P2 and nothing else, and the
+    ivory stays reserved for the single primary action in a dialog. Verified: P0 rings pink, P2 rings
+    cream, an unprioritised card rings grey — three distinct values.
+15. **HIGHLIGHT BY PRIORITY erased the dependency overlay** (user-reported). Measured before any
+    change: a 1px indigo ring at 70% alpha reads 1.28:1 against the palest P2 tint and 2.56:1 even
+    against a plain card, and the amber ring 2.26:1 on the same tint — both under the 3:1 bar for
+    non-text graphics, i.e. the wiring was effectively invisible exactly when the fills were loudest.
+    The arrow text was worse: indigo refs measured 1.91:1. Fixed by giving colour a dark step to sit
+    against rather than a louder hue — a 1px separator inside every ring, a 2px separator plus a
+    heavier 2px ring for the held overlay, a dark strip behind the arrow row, and a lighter indigo.
+    After: rings 4.5:1 or better on all four surfaces (plain, P0, P1, P2), arrow text 5.71:1 or
+    better, and ring rendering identical whether the fills are tinted or not — which is the property
+    that matters, since it means the tint can never degrade the overlay again.
+16. **The inherited navy surface family** (user-reported: "I thought we replaced the weird navy blue
+    with ink black but the bg of settings/import/export buttons is still that colour"). The buttons
+    were innocent — all six were transparent with 1px rules. The navy was the *surface behind them*:
+    three tokens (`--color-surface #141420`, `--color-surface-elevated #1e1e30` and
+    `--color-surface-interactive #252540`, the last referenced nowhere at all) painted every dialog,
+    the toast and every hover state, plus `--col-bg #0d0b13` under every column and `--color-border`
+    `#27273a` on both scrollbars. So a button's colour depended on which plane it happened to sit on,
+    and the "same" control looked like two different controls depending where it was placed.
+    Replaced with three surfaces and one lift: page, card, ink (chrome), and
+    `--lift: rgba(255,255,255,0.06)` for every hover — measured to read on the page, on ink and on a
+    card alike. The unused tokens and the `--unit`/`--color-vu-yellow` pair that nothing referenced
+    were deleted, and the recessed planes were warmed from `#0b0a12` to `#0c0909`.
+17. **Deleting a CSS token leaves the declaration silently dead** — found while making the change
+    above: `var(--col-bg)` survived its own token's deletion and simply resolved to nothing, with no
+    console error and nothing in a browser smoke test to catch it (`.column` would have lost its
+    fill with every check still passing). Fixed by adding `tests/check-styles.mjs`, which cross
+    references every `var(--x)` use against the definitions and fails the build otherwise. Proved in
+    both directions: it exits 1 naming `--col-bg` at styles.css:685 on the broken state, and passes
+    once the reference is fixed.
+
+18. **A half-typed card survived a reset** (found by re-reading the reset path against `importFile`,
+    which clears `ui.inlineAdd` and this did not). Reproduced before fixing: type "half typed title"
+    into a column's composer, reset the board, and the emptied column came back with the text still
+    in its add form — the one piece of pending work the wipe left behind. `doResetBoard` now clears
+    it with the rest of the pointers at deleted cards, and the smoke suite asserts the composer is
+    gone so the next person cannot reintroduce it. Consequence of the same pass: reset keeps the
+    filters, where import clears them — an import replaces the board with a different one (where a
+    stale filter hides everything), while a reset leaves a visible search box and visible chips, so
+    silently changing the view would be a second, unasked-for action.
+19. **The toolbar squeezed the board title to "MA…"** — visible in the hero screenshot the moment the
+    search field moved into the bar. Measured: the title rendered 32px of the 89px it needed, because
+    `flex: 0 1 auto` let it shrink while the fixed-width search field did not. The title is now
+    `flex: 0 0 auto` and the search field is `clamp(130px, 17vw, 220px)`, so the field gives way
+    first and the bar scrolls before the title is clipped. Verified: 89px rendered, fits.
+20. **Two toolbar hints were under AA** — the dependency hint ("HOLD D — DEPENDENCIES", the only
+    place the headline feature's hotkey is taught) and the priority legend's label both measured
+    4.17:1 at 9–10px. Both moved from muted to secondary for 7.93:1. The same pass raised the storage
+    lamp for the same reason (3.58:1 on the short-lived carbon band, 6.81:1 after).
+21. **The toolbar starved the search field to zero width** — found by checking the bar at six widths
+    after the search field moved into it. With the field on `flex: 0 1 auto` and `min-width: 0`, the
+    two `flex: 1` spacers that centre it took everything: at 700px the input rendered 0px wide while
+    the toolbar reported it as present. It is now `flex: 0 0 auto` with `clamp(130px, 17vw, 220px)`,
+    measured at 390/700/900/1200/1440/1920 — a real width at every one, and the bar scrolls instead of
+    collapsing a control. Centring holds (13px of true centre) wherever the bar is not scrolling.
+22. **The seed's column assignment was restored to its original spread**, after the user's own
+    session had moved cards into DONE while confirming that completing a blocker clears its
+    dependents — which it does, measured: moving `c-shell` to DONE dropped the board from 7 blocked to
+    4 by unblocking `c-store`, `c-chain` and `c-drag` transitively, and moving it back re-blocked all
+    seven. Worth recording because the layout is load-bearing for the screenshots: the seed is spread
+    across all five columns on purpose, so the demo shows a board with activity in every state.
 
 Claims that did not survive checking: a visual audit asserted the columns had different widths and
 that DONE was narrower; measurement shows five × 268px and zero card/chip overflow. The same audit's
-"low-contrast" complaint was right, but for a different reason than stated (item 1).
+"low-contrast" complaint was right, but for a different reason than stated (item 1). Three more from
+the review of this round, each settled by measuring rather than by argument — a claim that the seed's
+dependency edges are all intra-column (six of eight cross columns: c-shell in DONE blocks c-store in
+REVIEW and c-drag in IN PROGRESS, c-graph in IN PROGRESS blocks c-cycle in TO DO, and so on); a vision
+reading of the armed reset button as "red with white text" (`getComputedStyle` says `rgb(24, 4, 6)` at
+weight 700, which is 5.27:1 on the fill); and a claim that this repo has a git remote (it has none —
+which is why the README carries no CI badge and describes the workflow in prose instead).
 
 ## Assumption log (sorted by consequence)
 
@@ -262,8 +480,126 @@ that DONE was narrower; measurement shows five × 268px and zero card/chip overf
 8. **Native HTML5 drag, with the drawer's MOVE TO row as the universal path** (keyboard, touch,
    and the escape hatch when a pointer drag is awkward). Consequence: medium — no DnD dependency.
 9. **Priority is encoded twice** (2px rail + text chip) because colour alone is not an encoding.
-   Consequence: low. The user asked what the bars meant, so a legend now documents it and hides
-   itself when no card carries a priority.
+   Consequence: low. The user asked what the bars meant, so a legend now documents it, hides itself
+   when no card carries a priority, and renders its `NONE` key hollow — a card with no priority has
+   no rail, so a solid grey key would have taught the wrong thing.
+10. **No colour squares beside column names or on label chips** (user-directed after the first
+    build). Consequence: low, but it removed the last decorative colour — the column status lamp
+    and the hashed label palette are gone, and the palette code was deleted rather than left
+    unused. Selecting a filter chip now reads through the ivory ON fill instead of a swatch.
+11. **Add-card moved into the column header** (user-directed). A 22px `+` with a 38px hit area and
+    the hit count immediately to its left, opening the composer at the top of the list; empty
+    columns keep a plate-sized add action so a fresh board is not five dead frames.
+12. **Filter categories live behind a chevron** rather than as a permanent row (user-directed).
+    LABEL / PRIORITY / BLOCKED / DUE, each a set of chips; chips within a category OR, categories
+    AND. The count badge on the chevron exists because a collapsed pane would otherwise hide the
+    fact that filters are applied — the one thing a disclosure must not do.
+13. **Priority palette taken from the design system** (user-directed): pink `#f00e68` for P0,
+    burnt orange `#f14f2b` for P1, cream `#f9ffd0` for P2, and the palette's cyan `#14b8a6`
+    (eq band 6) for DUE TODAY so it never reads as alarm red. The rail is now CSS-driven from
+    `data-prio` instead of an inline style, so rail, legend and filter chips share one definition.
+14. **View options are a per-browser preference**, stored under their own key rather than in the
+    board document, so importing someone else's board does not rewrite how you look at it. Density
+    flows through `--density-*` tokens rather than duplicated rules. Hiding blocker badges is
+    explicitly display-only, and the pane says so — the gate still refuses and warns regardless.
+15. **Card numbers are handles, not positions** (user-asked). A number is assigned once, at
+    creation, from a monotonic `nextNumber` on the document, and is never reused or renumbered — so
+    "card 7 is blocked" stays true after 7 moves column. A board saved before numbers existed is
+    repaired in creation order (oldest first, ties in insertion order) with an announced repair
+    rather than being quarantined, and importing someone else's numbers is honoured because they are
+    how that board is discussed. Numbers are shown by default and can be hidden in VIEW OPTIONS.
+16. **Dependencies are revealed by holding D** (user-asked). The overlay is derived on every pass
+    (nothing is stored), wears the same two hues the hover chain already uses — amber where a card
+    waits, indigo where something waits on it — and each card lists the numbers it is wired to.
+    An edge whose blocker is finished still draws its arrow but earns no waiting ring, because the
+    arrow is the wiring and the ring is the constraint. The key is ignored while typing, while a
+    dialog is open, and with modifiers held; a window blur releases it so alt-tabbing cannot strand
+    the overlay.
+17. **The filter pane is a popover, not a drawer** (user-directed): it floats over the board on an
+    opaque elevated surface with a stronger border (the design forbids shadows, so depth is carried
+    by surface and border), and dismisses on an outside click or Escape from anywhere. Escape is
+    suppressed while a dialog is open, which owns its own. Icons are vendored inline SVG rather than
+    loaded from a runtime (defect 11).
+18. **Hover rings take the card's own priority colour** when priority is on the board as colour
+    (rails showing, or the full-card tint enabled), instead of the neutral cream used for a card
+    with no priority. The chain's up/down rings keep amber and indigo: they encode direction, which
+    a priority colour cannot.
+19. **The card surface is warm, and only the card surface** (user-directed, `#1f1819`). Columns,
+    panels and chips stay cool indigo, so the warmth reads as material rather than as a theme swap —
+    a deliberate contrast the audits called coherent. The consequence to decide on later: card↔column
+    separation is now 23 RGB rather than 28, and the cool chips on a warm card are the one place the
+    two temperatures touch. If the warmth is kept, the next candidates are the chip surface and the
+    column background; nothing else depends on the card's hue.
+20. **Header, filter control and pane each got their own surface** (user-directed, settled over three
+    revisions). The header borrows `--color-background` rather than a colour of its own, so it tracks
+    the page; the filter control and its pane share a new `--ink-bg` (`#00161c`). The sequence
+    matters: the header was first given ink, and the token was named `--col-head-bg` for that job;
+    when the user moved the ink to the filter control, the token was renamed rather than left
+    describing the wrong thing. Sibling states are derived from their own surface — the add button
+    lifts with a white overlay, the filter button with `color-mix` of its own ink — because a fixed
+    elevated-surface hover lands as a foreign patch once the surface underneath is no longer indigo.
+    Anything whose 9-10px text sits on a darkened surface gets its contrast re-measured, not assumed:
+    the filter group names moved from muted to secondary (3.8:1 → 7.3:1) for exactly the reason the
+    card number did (4.3:1 → 6.9:1).
+21. **Where two colour systems overlap, separate them with a dark step rather than a louder hue**
+    (from the user's report that highlight-by-priority hid the dependency overlay). Turning the tint
+    up would have fought the fills harder; the fix that works is a black line between the colour and
+    whatever it sits on. That principle now covers four places — the chain rings, the overlay rings,
+    the arrow strip and, earlier, the priority rail's relationship to the card surface — and the
+    reason is measured rather than aesthetic: contrast for a coloured ring is set by what is
+    immediately behind it, not by the fill underneath the whole card.
+22. **The columns and the navbar are the last two surfaces to be pinned down** (both user-directed in
+    the same pass as the navy removal). The columns now share the page's fill, so a column is defined
+    by its 1px rule and its header's stronger hairline rather than by a plane of its own; the navbar
+    takes carbon black `#1c1a1c`, the one band that is neither the page nor a card, so the chrome
+    reads as a strip across the top. Consequence: the navbar is the third surface colour in the app
+    and it has to hold text at 10px — the lamp readout measured 3.58:1 against it and moved from
+    muted to secondary (6.81:1) to stay above AA.
+23. **Reset restarts card numbering at #1**, where the rest of the app never reuses a number. The
+    invariant exists so a reference in someone's head ("4 blocks 6") cannot go stale while a card
+    carrying that number is still on the board; with no cards left there is nothing to point at, so
+    the empty board starts from 1 again. Numbering is not renumbered *within* a board either way.
+24. **The reset trigger reuses the destructive colour rather than introducing a danger hue.** The
+    trigger is a ghost (`--color-destructive` text and border, like the card-delete button); only the
+    confirm button fills, and only once the word has armed it. This keeps the fifth hue out of a
+    palette where every colour already means something (priority rail, blocked/override, due today,
+    the dependency overlay).
+25. **The toolbar, the read-out row and the sidebar all take the page's fill** (user-directed, across
+    three corrections in one pass: the navy family, then a carbon band, then back to the page). What
+    survived is a rule rather than a colour: a surface is only allowed to differ from the page when it
+    genuinely floats above it — cards, and the ink of modals, toasts and the filter pane. The sidebar
+    is not floating, it is docked, so it is the page with a rule down its edge and a dimmed backdrop
+    behind it. Anything that reads as chrome gets a border, not a plane.
+26. **The dependency hotkey and the priority key sit under the toolbar, not inside it** (user-directed
+    after seeing the first version). They are read-outs, not controls: no border, no fill, no divider,
+    and they scroll with their own row rather than competing for space with the buttons. The rule this
+    settles is that a control earns a border and a read-out does not, which is also why the filter
+    button lost its word and kept only its icon plus a badge.
+27. **Columns fill the page height rather than their content** (user-directed). The app grid gives the
+    board every pixel the toolbar and read-out row do not use, so all five columns share a bottom edge
+    at the viewport foot whether they hold eleven cards or one. An empty column then has a definite
+    place to drop a card, and the board reads as a board rather than as five lists of different
+    lengths.
+28. **The filter pane is the page's own fill** (user-directed, after two rejected attempts: an opaque
+    ink panel, then ink at 88% with a backdrop blur). Both were solving a problem that only existed
+    because the pane had its own colour — a second surface in a design whose whole rule is that a
+    surface differs from the page only when it floats *over* the board. It does float, but the 1px
+    rule says that on its own; the pane now measures byte-identical to the page (`rgb(10, 6, 8)`, no
+    blur) and reads as an overlay because the board behind it is dark and the rule is bright.
+    Consequence: ink survives in exactly two places, the modals and the toasts, which genuinely
+    appear over content they must not be confused with.
+29. **Columns are centred for any number the user has** (user-directed: "for whatever number of
+    columns the user has created they should be centered not left aligned"). The board row is
+    `width: max-content` with `margin-inline: auto`, and the auto margins are the mechanism — they
+    resolve to zero the moment the row is wider than its container, so a board that cannot fit still
+    scrolls from the first column instead of having its left edge clipped. Measured at 0px of true
+    centre for five and for three columns, and scrolling cleanly at ten (2752px of row in a 1440px
+    viewport).
+30. **The seed is a demo, not a plan** — its layout deliberately spreads cards across all five
+    columns so every feature has something to show, which means several cards sit in columns their
+    blockers never reached. That is why the seed reads `11 CARDS · 7 BLOCKED · 4 OVERRIDE` while
+    being correct: the overrides are the gate honouring its rule, not a bug in it. A board of one's
+    own work would not look like this, and the sample is meant to be replaced.
 
 ## Reasoning trace
 

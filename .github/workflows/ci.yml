@@ -1,0 +1,50 @@
+name: CI
+
+# The app is three static files, so "does it work" cannot be answered by a build
+# succeeding: there is no build. The gate is a real browser driving the real page
+# (tests/smoke.mjs), plus a syntax check so a typo cannot reach the deployed site.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Smoke test in a real browser
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install the test harness
+        run: npm ci
+
+      - name: Install chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Syntax check
+        run: npm run check
+
+      - name: Smoke test
+        run: npm test
+
+      - name: Upload what failed
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-failure
+          path: tests/.artifacts/
+          if-no-files-found: ignore

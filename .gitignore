@@ -1,0 +1,9 @@
+# dependencies are for the test harness only — the app itself has none
+node_modules/
+tests/.artifacts/
+
+# editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

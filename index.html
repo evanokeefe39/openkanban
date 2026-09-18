@@ -19,21 +19,14 @@
   </head>
   <body>
     <div class="app">
+      <!-- Icons: Lucide v1.47.0 (ISC), vendored as inline SVG. Four icons are not worth a 442 KB
+           runtime: this keeps the app a zero-build, offline-capable file set. Artwork unchanged;
+           sizing comes from .icon, colour from currentColor. -->
       <header class="topbar">
         <span class="brand">OPENKANBAN</span>
         <h1 class="board-name" id="board-name">&mdash;</h1>
         <p class="counters" id="counters"></p>
         <span class="spacer"></span>
-        <span class="lamp" id="storage-lamp" title="storage status">
-          <span class="lamp-dot" aria-hidden="true"></span>
-          <span id="storage-lamp-text">READY</span>
-        </span>
-        <button class="btn" id="btn-export" type="button">EXPORT</button>
-        <button class="btn" id="btn-import" type="button">IMPORT</button>
-        <button class="btn" id="btn-settings" type="button">SETTINGS</button>
-      </header>
-
-      <section class="filters" aria-label="Filters">
         <label class="search">
           <span class="visually-hidden">Search cards</span>
           <input
@@ -45,20 +38,92 @@
             spellcheck="false"
           />
         </label>
-        <div class="label-filters" id="label-filters"></div>
-        <button class="btn toggle" id="filter-blocked" type="button" aria-pressed="false">
-          BLOCKED ONLY
+        <button
+          class="btn filter-toggle"
+          id="filter-toggle"
+          type="button"
+          aria-expanded="false"
+          aria-controls="filter-panel"
+          aria-label="Filter cards"
+          title="Filter cards by label, priority, blocked state or due date"
+        >
+          <svg class="icon lucide-filter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 20a1 1 0 0 0 .553.895l2 1A1 1 0 0 0 14 21v-7a2 2 0 0 1 .517-1.341L21.74 4.67A1 1 0 0 0 21 3H3a1 1 0 0 0-.742 1.67l7.225 7.989A2 2 0 0 1 10 14z"/></svg>
+          <span class="filter-count" id="filter-count" hidden>0</span>
+          <svg class="chev" viewBox="0 0 10 6" aria-hidden="true">
+            <path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" />
+          </svg>
         </button>
-        <button class="btn" id="filter-clear" type="button">CLEAR</button>
-        <span class="filter-spacer"></span>
-        <span class="prio-legend" id="prio-legend" title="Card priority — the bar on the top edge of a card">
-          <span class="prio-legend-label">PRIORITY</span>
-          <span class="prio-key" data-prio="1"><i></i>P0</span>
-          <span class="prio-key" data-prio="2"><i></i>P1</span>
-          <span class="prio-key" data-prio="3"><i></i>P2</span>
-          <span class="prio-key" data-prio="0"><i></i>NONE</span>
+        <span class="spacer"></span>
+        <span class="lamp" id="storage-lamp" title="storage status">
+          <span class="lamp-dot" aria-hidden="true"></span>
+          <span id="storage-lamp-text">READY</span>
         </span>
-      </section>
+        <button class="btn" id="btn-export" type="button"><svg class="icon lucide-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg>EXPORT</button>
+        <button class="btn" id="btn-import" type="button"><svg class="icon lucide-upload" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m17 8-5-5-5 5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg>IMPORT</button>
+        <button class="btn" id="btn-settings" type="button"><svg class="icon lucide-sliders-horizontal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 5H3"/><path d="M12 19H3"/><path d="M14 3v4"/><path d="M16 17v4"/><path d="M21 12h-9"/><path d="M21 19h-5"/><path d="M21 5h-7"/><path d="M8 10v4"/><path d="M8 12H3"/></svg>SETTINGS</button>
+        <button class="btn danger" id="btn-reset" type="button" title="Delete every card on this board"><svg class="icon lucide-trash-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>RESET</button>
+      </header>
+
+      <!-- Read-outs rather than controls: the hotkeys and the priority key. They sit under the bar
+           with no border and no fill of their own, so nothing here competes with the board. -->
+      <div class="status-row">
+        <!-- Left: things the app has to tell you, and the one action that answers them. Empty on a
+             healthy board, so the row is quiet until it has something to say. -->
+        <span class="row-message" id="empty-prompt">
+          <span class="row-message-text">BOARD IS EMPTY</span>
+          <button class="btn" id="empty-sample" type="button">LOAD SAMPLE BOARD</button>
+        </span>
+        <!-- The row's three zones: message left, keys centre, legend right. The outers are equal
+             fixed-width gutters so the middle stays centred on the page however much the message
+             or the legend grows. -->
+        <span class="row-gutter"></span>
+        <span class="row-keys" id="row-keys">
+          <span
+            class="deps-indicator"
+            id="deps-indicator"
+            title="Hold the D key, then hover a card, to see its dependencies: a red candy cane on the cards it blocks, a white line on the cards that block it"
+          >
+            <span class="deps-keys"><kbd class="kbd">D</kbd> HOVER FOR DEPENDENCIES</span>
+            <span class="deps-on">SHOWING DEPENDENCIES</span>
+          </span>
+          <span class="row-key" title="Put a new card at the top of the first column">
+            <kbd class="kbd">C</kbd> NEW CARD
+          </span>
+          <span
+            class="row-key"
+            id="select-hint"
+            title="Hold Ctrl and click cards to pick several, then drag any one of them to a column"
+          >
+            <kbd class="kbd">CTRL</kbd> CLICK CARDS, DRAG THE GROUP
+          </span>
+        </span>
+        <span class="row-gutter"></span>
+        <span class="prio-legend"
+          id="prio-legend"
+          title="Card priority — the bar on the top edge of a card"
+        >
+          <span class="prio-legend-label">PRIORITY</span>
+          <span class="prio-key" data-prio="1"><i class="prio-swatch"></i>P0</span>
+          <span class="prio-key" data-prio="2"><i class="prio-swatch"></i>P1</span>
+          <span class="prio-key" data-prio="3"><i class="prio-swatch"></i>P2</span>
+          <span class="prio-key" data-prio="0"><i class="prio-swatch"></i>NONE</span>
+        </span>
+      </div>
+
+      <!-- The filter popover is positioned from its trigger's rect and sits outside the topbar:
+           the bar scrolls horizontally when it is crowded, and a scrolling ancestor would clip it. -->
+      <div class="filter-panel" id="filter-panel" hidden></div>
+
+      <!-- Bulk operations, shown only while cards are ticked. Positioned as an overlay rather than a
+           grid row: `.app`'s row template is sized for the toolbar, the read-out row and the board,
+           and a fourth in-flow child would push the board onto an implicit `auto` track and stop
+           the columns reaching the bottom. -->
+      <div class="selection-bar" id="selection-bar" hidden>
+        <span class="selection-count" id="selection-count"></span>
+        <span class="selection-hint">DRAG THEM TO A COLUMN, OR</span>
+        <span class="selection-targets" id="selection-targets"></span>
+        <button class="btn btn-small" id="selection-clear" type="button">CLEAR</button>
+      </div>
 
       <main class="board" id="board" aria-label="Kanban board"></main>
     </div>
@@ -143,7 +208,7 @@
           <span class="field-label">BOARD NAME</span>
           <input class="input" id="settings-name" type="text" spellcheck="false" />
         </label>
-        <div class="field">
+        <div class="field field-divider">
           <span class="field-label">LIFECYCLE STATES</span>
           <div class="col-rows" id="settings-columns"></div>
           <button class="btn" id="settings-add-column" type="button">+ ADD COLUMN</button>
@@ -152,13 +217,43 @@
             complete when resolving blockers.
           </p>
         </div>
-        <div class="field">
+        <div class="field field-divider">
+          <span class="field-label">VIEW OPTIONS</span>
+          <span class="sub-label">DENSITY</span>
+          <div class="seg" id="settings-density" role="group" aria-label="Card density"></div>
+          <div class="view-rows" id="settings-view"></div>
+          <p class="hint">
+            Display only — hiding blocker badges does not disable gating, and these preferences are
+            stored per browser, not with the board.
+          </p>
+        </div>
+
+        <div class="field field-divider">
           <span class="field-label">STORAGE</span>
           <p class="hint" id="settings-storage"></p>
-          <div class="row">
+          <div class="row" data-field-actions>
             <button class="btn" id="settings-export" type="button">EXPORT JSON</button>
             <button class="btn" id="settings-import" type="button">IMPORT JSON</button>
+            <button class="btn" id="settings-reset" type="button">RESET BOARD</button>
           </div>
+        </div>
+
+        <div class="field field-divider">
+          <span class="field-label">SAMPLE</span>
+          <div class="row" data-field-actions>
+            <button
+              class="btn"
+              id="settings-sample"
+              type="button"
+              title="Replace this board with the eleven sample cards"
+            >
+              LOAD SAMPLE BOARD
+            </button>
+          </div>
+          <p class="hint">
+            Replaces every card on this board with the eleven-card sample. Your columns, board name
+            and view options are kept.
+          </p>
         </div>
       </div>
     </dialog>
@@ -169,6 +264,33 @@
       <div class="modal-actions">
         <button class="btn" id="confirm-cancel" type="button">CANCEL</button>
         <button class="btn primary" id="confirm-ok" type="button">CONFIRM</button>
+      </div>
+    </dialog>
+
+    <!-- Reset is the one action here that cannot be undone, so it is gated on typing the word
+         rather than on a second click: a disabled button that becomes armed when the word matches. -->
+    <dialog class="modal" id="reset-dialog" aria-labelledby="reset-title" aria-describedby="reset-summary">
+      <h2 class="modal-title" id="reset-title">Reset board</h2>
+      <div class="modal-text">
+        <p id="reset-summary"></p>
+        <p>Columns, the board name and your view options are kept. This cannot be undone.</p>
+      </div>
+      <label class="field">
+        <span class="field-label">Type delete to confirm</span>
+        <input
+          class="input"
+          id="reset-word"
+          type="text"
+          autocomplete="off"
+          autocapitalize="off"
+          spellcheck="false"
+          placeholder="delete"
+          aria-describedby="reset-summary"
+        />
+      </label>
+      <div class="modal-actions">
+        <button class="btn" id="reset-cancel" type="button">CANCEL</button>
+        <button class="btn danger-solid" id="reset-ok" type="button" disabled>DELETE ALL CARDS</button>
       </div>
     </dialog>
 
