@@ -277,8 +277,9 @@ Verification tally — the runs, each counted once, summing to the total:
 8 numbering/migration/edge semantics, 10 regression over the new features, 4 hover-ring semantics,
 7 regression over the card surface change, 7 column-header checks, 9 ink-surface checks,
 6 ring-separator checks, 6 overlay-contrast checks, 14 reset-flow checks, 5 surface-and-header
-colour checks, plus the committed smoke suite (18 checks) run end to end.
-**372 assertions across 26 runs.**
+colour checks, 9 toolbar-restructure checks, 8 full-height-layout checks, 4 centring checks, 6
+bar-width checks, plus the committed smoke suite (19 checks) run end to end.
+**399 assertions across 30 runs.**
 
 Thirty-one failed on first pass. Two were real product defects, both found by a test rather than
 by review, both fixed: the icon CDN executing nothing (defect 11) and a chip click dismissing the
@@ -414,9 +415,39 @@ horizontal scroll: 0), which is the standard kanban affordance, and at COMPACT d
     both directions: it exits 1 naming `--col-bg` at styles.css:685 on the broken state, and passes
     once the reference is fixed.
 
+18. **A half-typed card survived a reset** (found by re-reading the reset path against `importFile`,
+    which clears `ui.inlineAdd` and this did not). Reproduced before fixing: type "half typed title"
+    into a column's composer, reset the board, and the emptied column came back with the text still
+    in its add form — the one piece of pending work the wipe left behind. `doResetBoard` now clears
+    it with the rest of the pointers at deleted cards, and the smoke suite asserts the composer is
+    gone so the next person cannot reintroduce it. Consequence of the same pass: reset keeps the
+    filters, where import clears them — an import replaces the board with a different one (where a
+    stale filter hides everything), while a reset leaves a visible search box and visible chips, so
+    silently changing the view would be a second, unasked-for action.
+19. **The toolbar squeezed the board title to "MA…"** — visible in the hero screenshot the moment the
+    search field moved into the bar. Measured: the title rendered 32px of the 89px it needed, because
+    `flex: 0 1 auto` let it shrink while the fixed-width search field did not. The title is now
+    `flex: 0 0 auto` and the search field is `clamp(130px, 17vw, 220px)`, so the field gives way
+    first and the bar scrolls before the title is clipped. Verified: 89px rendered, fits.
+20. **Two toolbar hints were under AA** — the dependency hint ("HOLD D — DEPENDENCIES", the only
+    place the headline feature's hotkey is taught) and the priority legend's label both measured
+    4.17:1 at 9–10px. Both moved from muted to secondary for 7.93:1. The same pass raised the storage
+    lamp for the same reason (3.58:1 on the short-lived carbon band, 6.81:1 after).
+21. **The toolbar starved the search field to zero width** — found by checking the bar at six widths
+    after the search field moved into it. With the field on `flex: 0 1 auto` and `min-width: 0`, the
+    two `flex: 1` spacers that centre it took everything: at 700px the input rendered 0px wide while
+    the toolbar reported it as present. It is now `flex: 0 0 auto` with `clamp(130px, 17vw, 220px)`,
+    measured at 390/700/900/1200/1440/1920 — a real width at every one, and the bar scrolls instead of
+    collapsing a control. Centring holds (13px of true centre) wherever the bar is not scrolling.
 Claims that did not survive checking: a visual audit asserted the columns had different widths and
 that DONE was narrower; measurement shows five × 268px and zero card/chip overflow. The same audit's
-"low-contrast" complaint was right, but for a different reason than stated (item 1).
+"low-contrast" complaint was right, but for a different reason than stated (item 1). Three more from
+the review of this round, each settled by measuring rather than by argument — a claim that the seed's
+dependency edges are all intra-column (six of eight cross columns: c-shell in DONE blocks c-store in
+REVIEW and c-drag in IN PROGRESS, c-graph in IN PROGRESS blocks c-cycle in TO DO, and so on); a vision
+reading of the armed reset button as "red with white text" (`getComputedStyle` says `rgb(24, 4, 6)` at
+weight 700, which is 5.27:1 on the fill); and a claim that this repo has a git remote (it has none —
+which is why the README carries no CI badge and describes the workflow in prose instead).
 
 ## Assumption log (sorted by consequence)
 
@@ -525,6 +556,22 @@ that DONE was narrower; measurement shows five × 268px and zero card/chip overf
     confirm button fills, and only once the word has armed it. This keeps the fifth hue out of a
     palette where every colour already means something (priority rail, blocked/override, due today,
     the dependency overlay).
+25. **The toolbar, the read-out row and the sidebar all take the page's fill** (user-directed, across
+    three corrections in one pass: the navy family, then a carbon band, then back to the page). What
+    survived is a rule rather than a colour: a surface is only allowed to differ from the page when it
+    genuinely floats above it — cards, and the ink of modals, toasts and the filter pane. The sidebar
+    is not floating, it is docked, so it is the page with a rule down its edge and a dimmed backdrop
+    behind it. Anything that reads as chrome gets a border, not a plane.
+26. **The dependency hotkey and the priority key sit under the toolbar, not inside it** (user-directed
+    after seeing the first version). They are read-outs, not controls: no border, no fill, no divider,
+    and they scroll with their own row rather than competing for space with the buttons. The rule this
+    settles is that a control earns a border and a read-out does not, which is also why the filter
+    button lost its word and kept only its icon plus a badge.
+27. **Columns fill the page height rather than their content** (user-directed). The app grid gives the
+    board every pixel the toolbar and read-out row do not use, so all five columns share a bottom edge
+    at the viewport foot whether they hold eleven cards or one. An empty column then has a definite
+    place to drop a card, and the board reads as a board rather than as five lists of different
+    lengths.
 
 ## Reasoning trace
 

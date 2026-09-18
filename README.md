@@ -32,9 +32,9 @@ The graph is the reason the rest of the app is shaped the way it is. Card number
 - **A storage lamp** that says `SAVED` or explains why it could not, and quarantines an unreadable payload to `<key>.corrupt` instead of discarding it.
 - **One file, one dependency: JetBrains Mono over a dark palette**, zero border radius, hard 1px rules, no shadows.
 
-| Filters and the popover | Settings and view options |
+| Filters | Settings and view options |
 | --- | --- |
-| ![The filter popover open over the board](docs/screenshots/filters.webp) | ![The settings drawer, with lifecycle flags and view options](docs/screenshots/settings.webp) |
+| ![The filter pane open under its icon in the toolbar](docs/screenshots/filters.webp) | ![The settings sidebar, with lifecycle flags and view options](docs/screenshots/settings.webp) |
 
 | Reset, gated on a typed word | Narrow viewport |
 | --- | --- |
@@ -92,7 +92,7 @@ The app has no build, so a green build would prove nothing. The gate drives the 
 ```sh
 npm ci
 npx playwright install chromium
-npm test          # 18 checks, ~20s
+npm test          # 19 checks, ~15s
 npm run check     # syntax check, plus every var() in the CSS must resolve
 ```
 
@@ -110,7 +110,7 @@ Any static host works, because there is nothing to build. On Vercel: import the 
 
 The look is lifted from a sibling project's design language: a dark instrument panel, JetBrains Mono throughout, 1px rules as the only source of separation, and zero border radius.
 
-There are exactly three surfaces and one hover: the **page** (`#0a0608`, which the columns share, so a column is drawn by its rule and its header hairline rather than by a plane), the **card** (`#1f1819`, warm against the rest), and **ink** (`#00161c`) for every piece of chrome — drawers, dialogs, toasts, the filter control and its pane. The navbar is the single exception: carbon black (`#1c1a1c`), because it is the one band that is neither the page nor a card. Every hover across the app is the same translucent white lift rather than a fourth surface colour, so a button looks like the same button wherever it is placed.
+There are exactly three surfaces and one hover. The **page** (`#0a0608`), which the toolbar, the read-out row and the columns all share, so those are drawn by their rules rather than by a change of plane. The **card** (`#1f1819`), warm against the rest. And **ink** (`#00161c`) for the things that genuinely float: the filter pane, the modals and the toasts. The sidebar is the page's own material too — three surfaces is the whole system, and every hover across the app is one translucent white lift rather than a fourth colour, so a button looks like the same button wherever it is placed.
 
 Colour is rationed, and this is the rule that keeps it legible: **colour is reserved for the priority rail, the blocked/override/due chips, the filter control, and the dependency overlay** — everything else is ink, ivory or a grey. Where two colour systems have to share a surface (priority fills and dependency rings, for instance) they are separated by a dark step rather than a louder hue, because contrast for a coloured ring is set by what is immediately behind it. That is a measured decision, not a taste one: on the palest priority tint the dependency ring measured 1.28:1 before the fix and 4.5:1 or better after it, with ring rendering identical whether the fills are tinted or not.
 
@@ -132,21 +132,34 @@ vercel.json               cache and security headers for the deploy
 
 ## How this was built
 
-One session, one model (`deepseek-v4-flash`), with the transcript as the source of these numbers — parsed with DuckDB out of the harness's session log, counting only the model's own responses (a "turn" is a message from me, and one turn can be dozens of responses once the agent starts running tools). They are measured at the moment this README was written, so the commits that follow move them a little.
+One session, one model (`deepseek-v4-flash`), with the transcript as the source of these numbers — parsed with DuckDB out of the harness's session log, counting only the model's own responses (a "turn" is a message from me, and one turn can be dozens of responses once the agent starts running tools). Measured at the commit that last touched this section; the session ran on past it, so these are a snapshot rather than a final total.
+
+The query, if you want to reproduce it against your own session log:
+
+```sql
+SELECT count(*) AS responses,
+       sum(message.usage.input)::BIGINT  AS input_tokens,
+       sum(message.usage.output)::BIGINT AS output_tokens,
+       sum(message.usage.cacheRead)::BIGINT AS cache_reads,
+       sum(message.usage.totalTokens)::BIGINT AS total_tokens,
+       round(sum(message.usage.cost.total), 2) AS cost_usd
+FROM read_json_auto('<session>.jsonl', format = 'newline_delimited', union_by_name = true)
+WHERE type = 'message' AND message.role = 'assistant';
+```
 
 | | |
 | --- | --- |
-| Wall clock | 121 minutes |
-| Turns (mine) | 18 |
-| Model responses | 338 |
-| Tool calls | 516 |
-| Input tokens | 1,266,486 |
-| Output tokens | 559,578 |
-| Reasoning tokens | 272,315 |
-| Cache reads | 61,064,704 |
-| Total tokens | 62,890,768 |
-| Cost | $1.42 |
-| App code | 3,784 lines across `index.html`, `styles.css`, `app.js` |
-| Test harness and config | 439 lines |
+| Wall clock | 162 minutes |
+| Turns (mine) | 24 |
+| Model responses | 424 |
+| Tool calls | 617 |
+| Input tokens | 1,552,941 |
+| Output tokens | 619,273 |
+| Reasoning tokens | 292,540 |
+| Cache reads | 78,054,272 |
+| Total tokens | 80,226,486 |
+| Cost | $1.68 |
+| App code | 3,829 lines across `index.html`, `styles.css`, `app.js` |
+| Test harness and config | 486 lines |
 
-Roughly a cent a minute, and about $0.0004 per line that survived to the end — of which the majority was spent on the parts you cannot see in a screenshot: the derived-blocked model, the validation and repair path, and measuring contrast rather than guessing at it.
+Roughly a cent a minute, and about four hundredths of a cent per line that survived to the end — of which the majority was spent on the parts you cannot see in a screenshot: the derived-blocked model, the validation and repair path, and measuring contrast rather than guessing at it.
