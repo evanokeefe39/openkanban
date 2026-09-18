@@ -417,20 +417,19 @@ html[data-highlight-priority='1'] .card[data-prio='3'] {
   width: clamp(130px, 17vw, 220px);
 }
 
-/* filter disclosure — the categories live behind the chevron */
+/* filter disclosure — the categories live behind the chevron. The trigger is a ghost like its
+   neighbours in the bar; only the pane it opens wears the ink surface. */
 .filter-toggle {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   flex: 0 0 auto;
-  background: var(--ink-bg);
-  color: var(--color-foreground);
-  border-color: var(--line-strong);
+  background: transparent;
+  color: var(--color-foreground-secondary);
+  border-color: var(--line);
 }
-/* lifts derived from the ink itself, so hover and open states stay in the same family rather than
-   landing an indigo patch on a teal control */
 .filter-toggle:hover {
-  background: color-mix(in oklab, var(--ink-bg) 88%, #ffffff);
+  background: var(--lift);
   color: var(--color-foreground);
   border-color: var(--line-strong);
 }
@@ -440,7 +439,7 @@ html[data-highlight-priority='1'] .card[data-prio='3'] {
   transition: transform 140ms var(--ease-out);
 }
 .filter-toggle[aria-expanded='true'] {
-  background: color-mix(in oklab, var(--ink-bg) 84%, #ffffff);
+  background: var(--lift);
   color: var(--color-foreground);
   border-color: var(--line-strong);
 }
@@ -457,11 +456,9 @@ html[data-highlight-priority='1'] .card[data-prio='3'] {
   display: none;
 }
 
-/* The pane floats over the board rather than pushing it down — the design rejects shadows, so the
-   floating read comes from an opaque ink surface and a border stronger than the bar's. Positioned
-   from the trigger's rect in JS (see positionFilterPanel): the navbar scrolls, so an absolutely
-   positioned popover inside it would be clipped by the bar's own overflow, and being fixed lets the
-   pane be clamped to the viewport when the trigger sits near the right edge. */
+/* The pane floats over the board rather than pushing it down. It is the page's own fill, so what
+   separates it from the board is the 1px rule and the dimmed content behind it rather than a second
+   surface colour — there is no ink plane left anywhere in the app. */
 .filter-panel {
   position: fixed;
   top: 0;
@@ -474,7 +471,7 @@ html[data-highlight-priority='1'] .card[data-prio='3'] {
   max-width: min(680px, calc(100vw - 24px));
   padding: 10px 12px 12px;
   border: 1px solid var(--line-strong);
-  background: var(--ink-bg);
+  background: var(--color-background);
 }
 .filter-panel[hidden] {
   display: none;
@@ -678,9 +675,17 @@ button.chip[aria-pressed='true']:hover {
   overflow-x: auto;
   overflow-y: hidden;
   min-height: 0;
+  /* a board narrower than the viewport sits in the middle rather than against the left edge, for any
+     number of columns. Once they cannot fit, the auto margins resolve to zero and the row scrolls
+     from the first column as usual. */
+  justify-content: center;
+  margin-inline: auto;
+  width: max-content;
+  max-width: 100%;
 }
 .board > .plate {
   flex: 0 0 auto;
+  margin-inline: auto;
 }
 
 .column {
