@@ -2023,6 +2023,11 @@
     if (!body) return null;
     const columnId = body.dataset.columnId;
     const cardEl = event.target.closest('.card');
+    // Only the grabbed card is skipped: it is the one physically under the pointer at the start, so
+    // it can never be its own landmark. Every other card — including the rest of a dragged group —
+    // still marks where the drop lands, because a moving card is a perfectly good position to
+    // insert relative to. Excluding the whole group would leave a group drag with no feedback at
+    // all as soon as the pointer crossed another member of it.
     if (cardEl && cardEl.dataset.cardId !== ui.dragId) {
       const rect = cardEl.getBoundingClientRect();
       const before = event.clientY < rect.top + rect.height / 2;

@@ -12,10 +12,12 @@
   --color-foreground: #e8e8ed;
   --color-foreground-secondary: #9ca3af;
   --color-foreground-muted: #6b7280;
-  /* Focus reads as the app's own accent (amber), not the indigo it started as: navy was swept out
-     of the whole surface system, and a blue focus ring was the last place it survived. Kept as its
-     own token rather than aliased to --color-accent so the two can diverge again if needed. */
-  --color-border-focus: #f59e0b;
+  /* Focus is the neutral near-white, and NOT the amber accent: amber already means warning in this
+     palette (the deps indicator, the override chip), so an amber focus ring made every focused field
+     read as an error — visible first on the delete-confirmation dialog. Explicitly not --ivory
+     either, which carries a warm cast of its own; a focus ring should be past question neutral.
+     (It was indigo before the navy sweep; that was the blue it started life as, not a decision.) */
+  --color-border-focus: #e8e8ed;
   --color-vu-green: #22c55e;
   --color-destructive: #ef4444;
   --color-accent: #f59e0b;
@@ -1084,9 +1086,20 @@ html[data-deps-mode='1'] .card[data-chain] .card-refs {
 }
 /* A ticked card. The marker is a box-shadow ring, not a border or a fill: the priority tint owns
    `background`/`border-color` and the dependency canes own the edges, so a tick drawn in either
-   would be erased the moment those states applied. Nothing else on a card uses box-shadow. */
+   would be erased the moment those states applied. Nothing else on a card uses box-shadow.
+   The drop indicators also use box-shadow, and during a group drag the card being dropped onto is
+   usually ticked — so the two are combined below rather than one replacing the other. */
 .card[data-picked='1'] {
   box-shadow: 0 0 0 2px var(--ivory);
+}
+/* a ticked card that is also a drop target keeps both marks: the ring says what is picked, the
+   inset line says where it will land, and neither may erase the other. Declared after both so it
+   wins on a ticked drop target. */
+.card[data-picked='1'].drop-before {
+  box-shadow: 0 0 0 2px var(--ivory), inset 0 2px 0 0 var(--ivory);
+}
+.card[data-picked='1'].drop-after {
+  box-shadow: 0 0 0 2px var(--ivory), inset 0 -2px 0 0 var(--ivory);
 }
 /* The tick is the read-out of the Ctrl mode, not a permanent control: it appears when the modifier
    is held and disappears with it, so the board is uncluttered the rest of the time and there is no
@@ -1413,6 +1426,8 @@ dialog::backdrop {
   white-space: nowrap;
 }
 .check input {
+  /* the neutral white, not the amber focus accent: the accent means warning in this palette, and a
+     checked box is a state rather than an alarm */
   accent-color: var(--color-border-focus);
   margin: 0;
   cursor: pointer;
