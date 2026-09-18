@@ -249,3 +249,29 @@ check or a green test.
   syntax gate both pass, and the effect would have surfaced as every cross-app check failing for a
   reason none of them names. Include the newline in the anchor, and read the edited lines back after
   any scripted edit to a file that matters.
+
+## 15. A subagent's "done" describes its worktree, not yours
+
+The board port ran for 70 minutes with `isolated: true`, reported every deliverable landed and every
+gate green, and then exited non-zero. None of it existed in this checkout: the apply step that copies
+an isolated worktree back to the parent runs on *success*, and the run had not succeeded.
+`git worktree list` showed only the main checkout, so the work looked lost.
+
+It was not. Every tool call in an agent's transcript carries a `resolvedPath`, and grepping
+`history://PortBoard` for the file name printed the worktree root (`~/.omp/wt/<owner>/m`), where all
+five files were intact — 1197 lines of component, 1503 of stylesheet — alongside an
+`.omp-isolation-owner.json` naming the owner. Copying them back and running the real gates took four
+minutes, against 70 minutes to redo the work.
+
+The rules:
+
+- **The evidence for "the code is written" is the file in your checkout.** Read the deliverable with
+  `ls` before accepting any report; a worker's "done" is a claim about wherever it was allowed to
+  write, and isolation puts that somewhere you never look.
+- **Isolation's cost is invisibility.** Either work in the main checkout, or accept that a run which
+  dies mid-flight strands its output in a directory nothing lists.
+- **Recover before redoing.** The transcript records the argument of every write and the path it
+  resolved to. Reading it is a cheaper first move than a second 70-minute run, and the `edit` bodies
+  that follow a `write` are the reason recovery is only cheap if the `write` exists.
+- **Have workers commit as they go.** The lost slice had no commit; the recovery ended with one, and
+  that is what makes it durable.
