@@ -23,6 +23,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import type { Board, Card, Column, ViewOptions } from "../../lib/types";
 import {
   BOARD_STORAGE_KEY,
@@ -31,13 +32,18 @@ import {
 } from "../../lib/types";
 import {
   addCard,
+  applyMove,
+  deleteCard,
   seedBoard,
+  touch,
   uid,
 } from "../../lib/board";
 import {
+  blockedChain,
   blockersOf,
   boardStats,
   card,
+  closure,
   columnOf,
   dependentsOf,
   getColumn,
@@ -55,6 +61,7 @@ import {
   titleCaseLabel,
   emptyFilterState,
 } from "../../lib/format";
+import type { FilterState } from "../../lib/format";
 import {
   loadBoard,
   loadView,
@@ -97,6 +104,38 @@ interface Toast {
   text: string;
 }
 
+/** One slot for every confirm gate — the move gate, the batch move, the delete. */
+interface ConfirmSpec {
+  title: string;
+  body: ReactNode;
+  okLabel: string;
+  danger: boolean;
+  onOk: () => void;
+}
+
+/** Vanilla `pathUp`: the chain of blockers from `fromId` to `toId`, inclusive, or null. */
+function pathUp(board: Board, fromId: string, toId: string): string[] | null {
+  const stack: Array<[string, string[]]> = [[fromId, [fromId]]];
+  const seen = new Set([fromId]);
+  while (stack.length) {
+    const [id, path] = stack.pop()!;
+    if (id === toId) return path;
+    for (const blocker of blockersOf(board, id)) {
+      if (seen.has(blocker.id)) continue;
+      seen.add(blocker.id);
+      stack.push([blocker.id, [...path, blocker.id]]);
+    }
+  }
+  return null;
+}
+
+/** Vanilla `cyclePathFor`: the cycle adding `blockerId` over `cardId` would close. */
+function cyclePathFor(board: Board, cardId: string, blockerId: string): string[] | null {
+  if (cardId === blockerId) return [cardId, cardId];
+  const path = pathUp(board, blockerId, cardId);
+  return path ? [cardId, ...path] : null;
+}
+
 function clockStamp(): string {
   return new Date().toTimeString().slice(0, 8);
 }
@@ -116,6 +155,10 @@ export default function OpenKanban() {
   const [nameDirty, setNameDirty] = useState(false);
   const [boardOrigin, setBoardOrigin] = useState("EDITED IN THIS BROWSER");
   const [lastWrite, setLastWrite] = useState<string | null>(null);
+  const [filters, setFilters] = useState<FilterState>(emptyFilterState);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selection, setSelection] = useState<Set<string>>(new Set());
+  const [confirmSpec, setConfirmSpec] = useState<ConfirmSpec | null>(null);
   const toastSeq = useRef(0);
 
   const pushToast = useCallback((kind: ToastKind, text: string) => {
@@ -200,6 +243,382 @@ export default function OpenKanban() {
     [writeBoard]
   );
 
+  // ---- filtering ----------------------------------------------------------
+  const activeFilterCount =
+    filters.labels.size +
+    filters.priorities.size +
+    filters.statuses.size +
+    filters.due.size +
+    (filters.query.trim() ? 1 : 0);
+
+  const setFilterQuery = useCallback((query: string) => {
+    setFilters((prev) => ({ ...prev, query }));
+  }, []);
+
+  const toggleFilterKey = useCallback((key: string) => {
+    const [kind, raw] = key.split(":");
+    if (!raw) return;
+    setFilters((prev) => {
+      const next: FilterState = {
+        query: prev.query,
+        labels: new Set(prev.labels),
+        priorities: new Set(prev.priorities),
+        statuses: new Set(prev.statuses),
+        due: new Set(prev.due),
+      };
+      if (kind === "label") {
+        if (next.labels.has(raw)) next.labels.delete(raw);
+        else next.labels.add(raw);
+      } else if (kind === "prio") {
+        const value = Number(raw);
+        if (next.priorities.has(value)) next.priorities.delete(value);
+        else next.priorities.add(value);
+      } else if (kind === "status") {
+        if (next.statuses.has(raw)) next.statuses.delete(raw);
+        else next.statuses.add(raw);
+      } else if (kind === "due") {
+        if (next.due.has(raw)) next.due.delete(raw);
+        else next.due.add(raw);
+      }
+      return next;
+    });
+  }, []);
+
+  const clearAllFilters = useCallback(() => setFilters(emptyFilterState()), []);
+
+  // ---- confirm gate: one action slot, like vanilla ------------------------
+  const askConfirm = useCallback((spec: ConfirmSpec) => setConfirmSpec(spec), []);
+
+  // ---- card mutations ------------------------------------------------------
+  /** Vanilla `updateCard`: trim the title, refuse a blank one with a notice. */
+  const updateCard = useCallback(
+    (cardId: string, patch: Partial<Card>): boolean => {
+      const target = board ? card(board, cardId) : null;
+      if (!target) return false;
+      const next = { ...patch };
+      if ("title" in next) {
+        next.title = String(next.title).trim().replace(/\s+/g, " ");
+        if (!next.title) {
+          pushToast("warn", "TITLE NOT CHANGED — A CARD NEEDS A TITLE");
+          delete next.title;
+        }
+      }
+      if (!Object.keys(next).length) return false;
+      commit((b) => {
+        const t = b.cards[cardId];
+        if (!t) return;
+        Object.assign(t, next);
+        touch(t);
+      });
+      return true;
+    },
+    [board, commit, pushToast]
+  );
+
+  const deleteCardById = useCallback(
+    (cardId: string) => {
+      if (!board) return;
+      const target = card(board, cardId);
+      if (!target) return;
+      const dependents = dependentsOf(board, cardId);
+      commit((b) => {
+        deleteCard(b, cardId);
+      });
+      setActiveCardId(null);
+      setCardDialogOpen(false);
+      pushToast("info", `CARD DELETED — REMOVED ${dependents.length} DEPENDENT LINK(S)`);
+    },
+    [board, commit, pushToast]
+  );
+
+  const addBlocker = useCallback(
+    (cardId: string, blockerId: string) => {
+      if (!board) return;
+      const target = card(board, cardId);
+      const blocker = card(board, blockerId);
+      if (!target || !blocker) {
+        pushToast("error", "LINK REFUSED — UNKNOWN CARD");
+        return;
+      }
+      if (target.blockedBy.includes(blockerId)) {
+        pushToast("warn", "LINK ALREADY EXISTS");
+        return;
+      }
+      const cycle = cyclePathFor(board, cardId, blockerId);
+      if (cycle) {
+        const names = cycle.map((id) => card(board, id)?.title ?? id);
+        pushToast("error", `LINK REFUSED — WOULD CREATE A CYCLE: ${names.join(" → ")}`);
+        return;
+      }
+      commit((b) => {
+        const t = b.cards[cardId];
+        if (!t) return;
+        t.blockedBy.push(blockerId);
+        touch(t);
+      });
+      pushToast("ok", `LINKED — "${blocker.title}" NOW BLOCKS "${target.title}"`);
+    },
+    [board, commit, pushToast]
+  );
+
+  const removeBlocker = useCallback(
+    (cardId: string, blockerId: string) => {
+      if (!board || !card(board, cardId)) return;
+      commit((b) => {
+        const t = b.cards[cardId];
+        if (!t) return;
+        t.blockedBy = t.blockedBy.filter((id) => id !== blockerId);
+        touch(t);
+      });
+    },
+    [board, commit]
+  );
+
+  const addLabelToCard = useCallback(
+    (cardId: string, raw: string): "added" | "empty" | "duplicate" => {
+      if (!board) return "empty";
+      const target = card(board, cardId);
+      if (!target) return "empty";
+      const value = titleCaseLabel(raw.trim());
+      if (!value) {
+        pushToast("warn", "NO LABEL ADDED — TYPE A NAME FIRST");
+        return "empty";
+      }
+      if (target.labels.includes(value)) {
+        pushToast("warn", `LABEL "${value}" IS ALREADY ON THIS CARD`);
+        return "duplicate";
+      }
+      commit((b) => {
+        const t = b.cards[cardId];
+        if (!t) return;
+        t.labels = [...t.labels, value];
+        touch(t);
+      });
+      return "added";
+    },
+    [board, commit, pushToast]
+  );
+
+  /**
+   * Vanilla `attemptMove` — the only function that relocates a card. The gate
+   * lives here, so no input method can bypass it.
+   */
+  const attemptMove = useCallback(
+    (cardId: string, columnId: string, referenceId?: string, where?: string) => {
+      if (!board) return;
+      const target = card(board, cardId);
+      const to = getColumn(board, columnId);
+      if (!target || !to) {
+        pushToast("error", "MOVE FAILED — UNKNOWN TARGET");
+        return;
+      }
+      const blockers = unfinishedBlockers(board, cardId);
+      if (to.gate && blockers.length) {
+        const body = (
+          <>
+            <p>{`"${target.title}" is blocked by ${blockers.length} unfinished card${blockers.length === 1 ? "" : "s"}:`}</p>
+            <ul>
+              {blockers.map((blocker) => {
+                const blockerColumn = columnOf(board, blocker.id);
+                return <li key={blocker.id}>{`${blocker.title} — ${blockerColumn ? blockerColumn.name : "unplaced"}`}</li>;
+              })}
+            </ul>
+            <p>{`Moving it into "${to.name}" records an override; the card stays flagged.`}</p>
+          </>
+        );
+        askConfirm({
+          title: "BLOCKED CARD → GATED COLUMN",
+          body,
+          okLabel: "MOVE ANYWAY",
+          danger: false,
+          onOk: () => {
+            commit((b) => {
+              applyMove(b, cardId, columnId, referenceId, where);
+            });
+            pushToast("warn", `OVERRIDE — "${target.title}" IS IN "${to.name}" WHILE STILL BLOCKED`);
+          },
+        });
+        return;
+      }
+      commit((b) => {
+        applyMove(b, cardId, columnId, referenceId, where);
+      });
+    },
+    [board, askConfirm, commit, pushToast]
+  );
+
+  /** Vanilla `moveSelectionTo` — one gate check for the batch, one dialog. */
+  const moveSelectionTo = useCallback(
+    (columnId: string) => {
+      if (!board) return;
+      const ids = board.columns.flatMap((col) => col.cardIds.filter((id) => selection.has(id)));
+      const to = getColumn(board, columnId);
+      if (!ids.length || !to) return;
+      const blocked = to.gate ? ids.filter((id) => unfinishedBlockers(board, id).length) : [];
+      const apply = () => {
+        commit((b) => {
+          for (const id of ids) applyMove(b, id, columnId);
+        });
+        setSelection(new Set());
+        pushToast("ok", `MOVED ${ids.length} CARD${ids.length === 1 ? "" : "S"} TO ${to.name}`);
+      };
+      if (!blocked.length) {
+        apply();
+        return;
+      }
+      const body = (
+        <>
+          <p>{`${blocked.length} of the ${ids.length} card${ids.length === 1 ? "" : "s"} being moved ${blocked.length === 1 ? "is" : "are"} blocked:`}</p>
+          <ul>
+            {blocked.map((id) => {
+              const member = card(board, id);
+              const memberColumn = columnOf(board, id);
+              if (!member) return null;
+              return <li key={id}>{`#${member.number} ${member.title} — ${memberColumn ? memberColumn.name : "unplaced"}`}</li>;
+            })}
+          </ul>
+          <p>{`They move into "${to.name}" anyway, and stay flagged as overrides.`}</p>
+        </>
+      );
+      askConfirm({
+        title: "BLOCKED CARDS → GATED COLUMN",
+        body,
+        okLabel: "MOVE ANYWAY",
+        danger: false,
+        onOk: apply,
+      });
+    },
+    [board, selection, askConfirm, commit, pushToast]
+  );
+
+  const togglePick = useCallback((cardId: string) => {
+    setSelection((prev) => {
+      const next = new Set(prev);
+      if (next.has(cardId)) next.delete(cardId);
+      else next.add(cardId);
+      return next;
+    });
+  }, []);
+
+  // ---- dependency overlay -------------------------------------------------
+  // Vanilla patches the chain highlight onto the existing nodes rather than
+  // re-rendering, because a re-render resets each column's scroll under the
+  // pointer. Same here: `chainIdRef`/`depsHeldRef` are refs, the patch writes
+  // `data-chain` and `data-deps-mode` straight to the DOM, and no state update
+  // is involved in hover at all.
+  const boardRef = useRef<Board | null>(null);
+  const depsHeldRef = useRef(false);
+  const chainIdRef = useRef<string | null>(null);
+
+  const patchChain = useCallback(() => {
+    const b = boardRef.current;
+    const anchor = depsHeldRef.current ? chainIdRef.current : null;
+    document.documentElement.dataset.depsMode = depsHeldRef.current ? "1" : "0";
+    const blocks = b && anchor ? closure(b, anchor, "down") : null;
+    const blocked = b && anchor ? blockedChain(b, anchor) : null;
+    for (const node of document.querySelectorAll<HTMLElement>("#board .card")) {
+      const id = node.dataset.cardId;
+      if (!id) continue;
+      // the hovered card is the subject, not a verb: no cane of its own
+      if (id === anchor) {
+        delete node.dataset.chain;
+      } else if (blocks?.has(id) && blocked?.has(id)) {
+        node.dataset.chain = "both";
+      } else if (blocks?.has(id)) {
+        node.dataset.chain = "blocks";
+      } else if (blocked?.has(id)) {
+        node.dataset.chain = "blocked";
+      } else {
+        delete node.dataset.chain;
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    boardRef.current = board;
+    patchChain();
+  }, [board, patchChain]);
+
+  useEffect(() => {
+    const typing = (event: Event) => {
+      const target = event.target as HTMLElement | null;
+      return !!(target && target.closest && target.closest('input, textarea, select, [contenteditable="true"]'));
+    };
+    const release = () => {
+      if (!depsHeldRef.current) return;
+      depsHeldRef.current = false;
+      patchChain();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "d" && event.key !== "D") return;
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      if (typing(event) || document.querySelector("dialog[open]") || depsHeldRef.current) return;
+      depsHeldRef.current = true;
+      patchChain();
+    };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.key === "d" || event.key === "D") release();
+    };
+    // alt-tabbing mid-hold must not strand the overlay
+    window.addEventListener("blur", release);
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("blur", release);
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("keyup", onKeyUp);
+    };
+  }, [patchChain]);
+
+  const setChainAnchor = useCallback(
+    (id: string | null) => {
+      if (id === chainIdRef.current) return;
+      chainIdRef.current = id;
+      patchChain();
+    },
+    [patchChain]
+  );
+
+  // ---- bulk selection mode ------------------------------------------------
+  useEffect(() => {
+    const release = () => {
+      setSelectMode(false);
+      setSelection(new Set());
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Control" && event.key !== "Meta") return;
+      setSelectMode(true);
+    };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.key === "Control" || event.key === "Meta") release();
+    };
+    // alt-tabbing mid-hold must not strand either mode
+    window.addEventListener("blur", release);
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("blur", release);
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("keyup", onKeyUp);
+    };
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.selectMode = selectMode ? "1" : "0";
+  }, [selectMode]);
+
+  // a card can be deleted between ticks: prune ids that are no longer on the
+  // board, or the bar would count cards the user cannot see
+  useEffect(() => {
+    if (!board) return;
+    setSelection((prev) => {
+      const kept = new Set([...prev].filter((id) => board.cards[id]));
+      return kept.size === prev.size ? prev : kept;
+    });
+  }, [board]);
+
+  // ---- html state keys ----------------------------------------------------
+
   const setBoardName = useCallback(
     (name: string) => {
       commit((next) => {
@@ -255,13 +674,54 @@ export default function OpenKanban() {
     }
   }, [view]);
 
+  // ---- filter pane: Escape, outside click, anchor to the trigger ----------
   useEffect(() => {
-    const root = document.documentElement;
-    // bulk selection is unwired this run, so the mode key is permanently off —
-    // but it is part of the declared html state contract and must exist
-    root.dataset.selectMode = "0";
-    root.dataset.depsMode = "0";
-  }, []);
+    const close = () => {
+      setFilterOpen(false);
+      document.getElementById("filter-toggle")?.focus();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || !filterOpen) return;
+      if (document.querySelector("dialog[open]")) return;
+      close();
+    };
+    const onPointerDown = (event: MouseEvent) => {
+      if (!filterOpen) return;
+      const target = event.target as HTMLElement | null;
+      if (target && target.closest && target.closest("#filter-panel, #filter-toggle")) return;
+      setFilterOpen(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("mousedown", onPointerDown, true);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("mousedown", onPointerDown, true);
+    };
+  }, [filterOpen]);
+
+  // the pane floats over the board, anchored to the trigger, clamped to the
+  // viewport — measured after the content renders, since the pane's own width
+  // depends on that content
+  useEffect(() => {
+    if (!filterOpen) return;
+    const panel = document.getElementById("filter-panel");
+    const trigger = document.getElementById("filter-toggle");
+    if (!panel || !trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    const width = panel.offsetWidth;
+    const margin = 12;
+    let left = rect.left;
+    if (left + width > window.innerWidth - margin) left = window.innerWidth - margin - width;
+    if (left < margin) left = margin;
+    panel.style.left = `${Math.round(left)}px`;
+    panel.style.top = `${Math.round(rect.bottom + 8)}px`;
+  }, [filterOpen, activeFilterCount, filters]);
+
+  // opening from the trigger moves focus to the first chip, like vanilla
+  useEffect(() => {
+    if (!filterOpen) return;
+    document.querySelector<HTMLElement>("#filter-panel button")?.focus({ preventScroll: true });
+  }, [filterOpen]);
 
   useEffect(() => {
     const total = board ? Object.keys(board.cards).length : 0;
@@ -301,9 +761,7 @@ export default function OpenKanban() {
 
   // ---- render-time derivations -------------------------------------------
   const stats = useMemo(() => (board ? boardStats(board) : null), [board]);
-  const filters = useMemo(() => emptyFilterState(), []);
   const activeCard = board && activeCardId ? card(board, activeCardId) : null;
-  const drawerCard = activeCard ?? (board ? Object.values(board.cards)[0] ?? null : null);
 
   const chainOf = useCallback(
     (target: Card): { blocks: Card[]; blockedBy: Card[]; blocked: boolean } => {
@@ -326,6 +784,9 @@ export default function OpenKanban() {
           lamp={lamp}
           view={view}
           filterOpen={filterOpen}
+          activeFilterCount={activeFilterCount}
+          query={filters.query}
+          onQueryChange={setFilterQuery}
           onToggleFilters={() => setFilterOpen((open) => !open)}
           onOpenSettings={openSettings}
         />
@@ -382,19 +843,47 @@ export default function OpenKanban() {
         </div>
 
         <div className="filter-panel" id="filter-panel" hidden={!filterOpen}>
-          <FilterPanel board={board} filters={filters} />
+          <FilterPanel board={board} filters={filters} onToggleKey={toggleFilterKey} onClear={clearAllFilters} />
         </div>
 
-        <div className="selection-bar" id="selection-bar" hidden>
-          <span className="selection-count" id="selection-count" />
+        <div className="selection-bar" id="selection-bar" hidden={selection.size === 0}>
+          <span className="selection-count" id="selection-count">
+            {`${selection.size} SELECTED`}
+          </span>
           <span className="selection-hint">DRAG THEM TO A COLUMN, OR</span>
-          <span className="selection-targets" id="selection-targets" />
-          <button className="btn btn-small" id="selection-clear" type="button">
+          <span className="selection-targets" id="selection-targets">
+            {(board?.columns ?? []).map((column) => (
+              <button
+                className="btn btn-small"
+                type="button"
+                data-move-selection-to={column.id}
+                key={column.id}
+                onClick={() => moveSelectionTo(column.id)}
+              >
+                {column.name}
+              </button>
+            ))}
+          </span>
+          <button className="btn btn-small" id="selection-clear" type="button" onClick={() => setSelection(new Set())}>
             CLEAR
           </button>
         </div>
 
-        <main className="board" id="board" aria-label="Kanban board">
+        <main
+          className="board"
+          id="board"
+          aria-label="Kanban board"
+          onMouseOver={(event) => {
+            const el = (event.target as HTMLElement).closest?.(".card");
+            setChainAnchor(el ? (el as HTMLElement).dataset.cardId ?? null : null);
+          }}
+          onFocus={(event) => {
+            const el = (event.target as HTMLElement).closest?.(".card");
+            setChainAnchor(el ? (el as HTMLElement).dataset.cardId ?? null : null);
+          }}
+          onMouseLeave={() => setChainAnchor(null)}
+          onBlur={() => setChainAnchor(null)}
+        >
           {(board?.columns ?? []).map((column) => (
             <ColumnView
               key={column.id}
@@ -403,6 +892,9 @@ export default function OpenKanban() {
               filters={filters}
               view={view}
               chainOf={chainOf}
+              selection={selection}
+              selectMode={selectMode}
+              onTogglePick={togglePick}
               inlineAdd={inlineAdd}
               inlineValue={inlineValue}
               onInlineValue={setInlineValue}
@@ -415,14 +907,66 @@ export default function OpenKanban() {
               }}
             />
           ))}
+          {(() => {
+            // a board whose cards are all hidden by the filter is the case that
+            // needs saying; an empty board needs no plate — every column already
+            // offers "+ ADD CARD"
+            if (!board || !Object.keys(board.cards).length) return null;
+            const visible = board.columns.reduce(
+              (sum, column) =>
+                sum + column.cardIds.filter((id) => board.cards[id] && matchesFilter(board, board.cards[id], filters)).length,
+              0
+            );
+            if (visible > 0) return null;
+            return <p className="plate">NO CARDS MATCH THE FILTER</p>;
+          })()}
         </main>
       </div>
 
       <CardDialog
         open={cardDialogOpen}
         board={board}
-        target={drawerCard}
-        onClose={() => setCardDialogOpen(false)}
+        target={activeCard}
+        blockedByConfirm={confirmSpec !== null}
+        onUpdateCard={updateCard}
+        onAddLabel={addLabelToCard}
+        onAddBlocker={addBlocker}
+        onRemoveBlocker={removeBlocker}
+        onAttemptMove={attemptMove}
+        onDelete={(id) => {
+          if (!board) return;
+          const target = card(board, id);
+          if (!target) return;
+          const dependents = dependentsOf(board, id);
+          const blockers = blockersOf(board, id);
+          const body = (
+            <>
+              <p>{`Delete "${target.title}"?`}</p>
+              {blockers.length + dependents.length > 0 && (
+                <ul>
+                  {blockers.map((blocker) => (
+                    <li key={blocker.id}>{`unblocks this card: ${blocker.title}`}</li>
+                  ))}
+                  {dependents.map((dependent) => (
+                    <li key={dependent.id}>{`waits on this card: ${dependent.title}`}</li>
+                  ))}
+                </ul>
+              )}
+            </>
+          );
+          askConfirm({
+            title: "DELETE CARD",
+            body,
+            okLabel: "DELETE",
+            danger: true,
+            onOk: () => deleteCardById(id),
+          });
+        }}
+        onClose={() => {
+          setCardDialogOpen(false);
+          setActiveCardId(null);
+        }}
+        onNotify={pushToast}
       />
 
       <dialog className="drawer" id="settings-dialog" aria-labelledby="settings-kicker" open={settingsOpen}>
@@ -574,17 +1118,34 @@ export default function OpenKanban() {
         </div>
       </dialog>
 
-      <dialog className="modal" id="confirm-dialog" aria-labelledby="confirm-title">
-        <h2 className="modal-title" id="confirm-title" />
-        <div className="modal-text" id="confirm-text" />
-        <div className="modal-actions">
-          <button className="btn" id="confirm-cancel" type="button">
-            CANCEL
-          </button>
-          <button className="btn primary" id="confirm-ok" type="button">
-            CONFIRM
-          </button>
-        </div>
+      <dialog className="modal" id="confirm-dialog" aria-labelledby="confirm-title" open={confirmSpec !== null}>
+        {confirmSpec && (
+          <>
+            <h2 className="modal-title" id="confirm-title">
+              {confirmSpec.title}
+            </h2>
+            <div className="modal-text" id="confirm-text">
+              {confirmSpec.body}
+            </div>
+            <div className="modal-actions">
+              <button className="btn" id="confirm-cancel" type="button" onClick={() => setConfirmSpec(null)}>
+                CANCEL
+              </button>
+              <button
+                className={`btn ${confirmSpec.danger ? "danger" : "primary"}`}
+                id="confirm-ok"
+                type="button"
+                onClick={() => {
+                  const action = confirmSpec.onOk;
+                  setConfirmSpec(null);
+                  action();
+                }}
+              >
+                {confirmSpec.okLabel || "CONFIRM"}
+              </button>
+            </div>
+          </>
+        )}
       </dialog>
 
       <dialog className="modal" id="reset-dialog" aria-labelledby="reset-title" aria-describedby="reset-summary">
@@ -629,7 +1190,11 @@ function TopBar({
   board,
   stats,
   lamp,
+  view,
   filterOpen,
+  activeFilterCount,
+  query,
+  onQueryChange,
   onToggleFilters,
   onOpenSettings,
 }: {
@@ -638,10 +1203,12 @@ function TopBar({
   lamp: { state: LampState; detail: string };
   view: ViewOptions;
   filterOpen: boolean;
+  activeFilterCount: number;
+  query: string;
+  onQueryChange: (query: string) => void;
   onToggleFilters: () => void;
   onOpenSettings: () => void;
 }) {
-  const activeFilterCount = 0;
   return (
     <header className="topbar">
       <span className="brand">OPENKANBAN</span>
@@ -654,7 +1221,16 @@ function TopBar({
       <span className="spacer" />
       <label className="search">
         <span className="visually-hidden">Search cards</span>
-        <input className="input" type="search" id="filter-query" placeholder="SEARCH TITLE / NOTES / LABEL" autoComplete="off" spellCheck={false} />
+        <input
+          className="input"
+          type="search"
+          id="filter-query"
+          placeholder="SEARCH TITLE / NOTES / LABEL"
+          autoComplete="off"
+          spellCheck={false}
+          value={query}
+          onChange={(event) => onQueryChange(event.target.value)}
+        />
       </label>
       <button
         className="btn filter-toggle"
@@ -726,14 +1302,25 @@ function TopBar({
 }
 
 // ---------------------------------------------------------------------------
-// Filter panel — structure only; chip toggling is unwired in this run
+// Filter panel
 // ---------------------------------------------------------------------------
 
-function FilterPanel({ board }: { board: Board | null; filters: unknown }) {
+function FilterPanel({
+  board,
+  filters,
+  onToggleKey,
+  onClear,
+}: {
+  board: Board | null;
+  filters: FilterState;
+  onToggleKey: (key: string) => void;
+  onClear: () => void;
+}) {
   const used = new Set<string>();
   for (const target of Object.values(board?.cards ?? {})) {
     for (const label of target.labels) used.add(label);
   }
+  const active = filters.labels.size + filters.priorities.size + filters.statuses.size + filters.due.size > 0 || !!filters.query.trim();
   return (
     <>
       <div className="filter-group">
@@ -741,7 +1328,15 @@ function FilterPanel({ board }: { board: Board | null; filters: unknown }) {
         <div className="chips">
           {used.size ? (
             [...used].sort().map((label) => (
-              <button className="chip" type="button" data-filter-key={`label:${label}`} aria-pressed="false" title={`Show only cards labelled ${label}`} key={label}>
+              <button
+                className="chip"
+                type="button"
+                data-filter-key={`label:${label}`}
+                aria-pressed={filters.labels.has(label) ? "true" : "false"}
+                title={`Show only cards labelled ${label}`}
+                key={label}
+                onClick={() => onToggleKey(`label:${label}`)}
+              >
                 {label}
               </button>
             ))
@@ -754,7 +1349,16 @@ function FilterPanel({ board }: { board: Board | null; filters: unknown }) {
         <span className="filter-group-name">PRIORITY</span>
         <div className="chips">
           {PRIORITIES.map((option) => (
-            <button className="chip" type="button" data-filter-key={`prio:${option.value}`} data-prio={option.value} aria-pressed="false" title={option.title} key={option.value}>
+            <button
+              className="chip"
+              type="button"
+              data-filter-key={`prio:${option.value}`}
+              data-prio={option.value}
+              aria-pressed={filters.priorities.has(option.value) ? "true" : "false"}
+              title={option.title}
+              key={option.value}
+              onClick={() => onToggleKey(`prio:${option.value}`)}
+            >
               <i className="prio-swatch" />
               {option.value === 0 ? "NONE" : option.label}
             </button>
@@ -765,7 +1369,15 @@ function FilterPanel({ board }: { board: Board | null; filters: unknown }) {
         <span className="filter-group-name">BLOCKED</span>
         <div className="chips">
           {STATUS_FILTERS.map((option) => (
-            <button className="chip" type="button" data-filter-key={`status:${option.id}`} aria-pressed="false" title={option.title} key={option.id}>
+            <button
+              className="chip"
+              type="button"
+              data-filter-key={`status:${option.id}`}
+              aria-pressed={filters.statuses.has(option.id) ? "true" : "false"}
+              title={option.title}
+              key={option.id}
+              onClick={() => onToggleKey(`status:${option.id}`)}
+            >
               {option.label}
             </button>
           ))}
@@ -775,14 +1387,22 @@ function FilterPanel({ board }: { board: Board | null; filters: unknown }) {
         <span className="filter-group-name">DUE</span>
         <div className="chips">
           {DUE_FILTERS.map((option) => (
-            <button className="chip" type="button" data-filter-key={`due:${option.id}`} aria-pressed="false" title={option.title} key={option.id}>
+            <button
+              className="chip"
+              type="button"
+              data-filter-key={`due:${option.id}`}
+              aria-pressed={filters.due.has(option.id) ? "true" : "false"}
+              title={option.title}
+              key={option.id}
+              onClick={() => onToggleKey(`due:${option.id}`)}
+            >
               {option.label}
             </button>
           ))}
         </div>
       </div>
       <div className="filter-panel-foot">
-        <button className="btn" type="button" data-act="clear" disabled>
+        <button className="btn" type="button" data-act="clear" disabled={!active} onClick={onClear}>
           CLEAR ALL
         </button>
       </div>
@@ -800,6 +1420,9 @@ function ColumnView({
   filters,
   view,
   chainOf,
+  selection,
+  selectMode,
+  onTogglePick,
   inlineAdd,
   inlineValue,
   onInlineValue,
@@ -810,9 +1433,12 @@ function ColumnView({
 }: {
   column: Column;
   board: Board | null;
-  filters: ReturnType<typeof emptyFilterState>;
+  filters: FilterState;
   view: ViewOptions;
   chainOf: (target: Card) => { blocks: Card[]; blockedBy: Card[]; blocked: boolean };
+  selection: Set<string>;
+  selectMode: boolean;
+  onTogglePick: (id: string) => void;
   inlineAdd: { columnId: string } | null;
   inlineValue: string;
   onInlineValue: (value: string) => void;
@@ -897,7 +1523,17 @@ function ColumnView({
           )
         ) : (
           shown.map((target) => (
-            <CardView key={target.id} target={target} board={board} view={view} chainOf={chainOf} onOpenCard={onOpenCard} />
+            <CardView
+              key={target.id}
+              target={target}
+              board={board}
+              view={view}
+              chainOf={chainOf}
+              picked={selection.has(target.id)}
+              selectMode={selectMode}
+              onTogglePick={onTogglePick}
+              onOpenCard={onOpenCard}
+            />
           ))
         )}
       </div>
@@ -914,12 +1550,18 @@ function CardView({
   board,
   view,
   chainOf,
+  picked,
+  selectMode,
+  onTogglePick,
   onOpenCard,
 }: {
   target: Card;
   board: Board | null;
   view: ViewOptions;
   chainOf: (target: Card) => { blocks: Card[]; blockedBy: Card[]; blocked: boolean };
+  picked: boolean;
+  selectMode: boolean;
+  onTogglePick: (id: string) => void;
   onOpenCard: (id: string) => void;
 }) {
   const { blocks, blockedBy, blocked } = chainOf(target);
@@ -927,23 +1569,46 @@ function CardView({
   const override = blocked && !!column && column.gate;
   const prio = PRIORITIES.find((p) => p.value === target.priority) ?? PRIORITIES[0];
 
+  // Ctrl turns a click anywhere on a card into a tick — the box is the
+  // read-out, the card is the hit area — and that click must never open the
+  // drawer. The guard returns true when it consumed the click.
+  const pickGuard = (event: ReactMouseEvent<HTMLElement>): boolean => {
+    if (!(selectMode || event.ctrlKey || event.metaKey)) return false;
+    event.preventDefault();
+    event.stopPropagation();
+    onTogglePick(target.id);
+    return true;
+  };
+
   return (
     <article
       className="card"
       data-card-id={target.id}
       data-blocked={blocked ? "1" : "0"}
       data-prio={String(target.priority)}
+      data-picked={picked ? "1" : undefined}
       draggable
+      onClick={pickGuard}
     >
       <span className="card-cane" />
-      <input className="card-tick" type="checkbox" aria-label={`Select #${target.number} ${target.title} for a bulk move`} />
+      <input
+        className="card-tick"
+        type="checkbox"
+        checked={picked}
+        aria-label={`Select #${target.number} ${target.title} for a bulk move`}
+        onClick={(event) => event.stopPropagation()}
+        onChange={() => onTogglePick(target.id)}
+      />
       <button
         className="card-main"
         type="button"
         draggable
         data-card-id={target.id}
         aria-label={`#${target.number} ${target.title} — ${column?.name ?? "unplaced"}${blocked ? ", blocked" : ""}${prio.value ? `, priority ${prio.label}` : ""}`}
-        onClick={() => onOpenCard(target.id)}
+        onClick={(event) => {
+          if (pickGuard(event)) return;
+          onOpenCard(target.id);
+        }}
       >
         <span className="card-num" title={`Card #${target.number}`}>
           #{target.number}
@@ -1018,18 +1683,34 @@ function DueChip({ due, done }: { due: string; done: boolean }) {
 }
 
 // ---------------------------------------------------------------------------
-// Card drawer — structure; field edits unwired in this run
+// Card drawer
 // ---------------------------------------------------------------------------
 
 function CardDialog({
   open,
   board,
   target,
+  blockedByConfirm,
+  onUpdateCard,
+  onAddLabel,
+  onAddBlocker,
+  onRemoveBlocker,
+  onAttemptMove,
+  onDelete,
+  onNotify,
   onClose,
 }: {
   open: boolean;
   board: Board | null;
   target: Card | null;
+  blockedByConfirm: boolean;
+  onUpdateCard: (cardId: string, patch: Partial<Card>) => boolean;
+  onAddLabel: (cardId: string, raw: string) => "added" | "empty" | "duplicate";
+  onAddBlocker: (cardId: string, blockerId: string) => void;
+  onRemoveBlocker: (cardId: string, blockerId: string) => void;
+  onAttemptMove: (cardId: string, columnId: string, referenceId?: string, where?: string) => void;
+  onDelete: (cardId: string) => void;
+  onNotify: (kind: ToastKind, text: string) => void;
   onClose: () => void;
 }) {
   const column = board && target ? columnOf(board, target.id) : null;
@@ -1038,24 +1719,138 @@ function CardDialog({
   const dependents = board && target ? dependentsOf(board, target.id) : [];
   const linkCount = blockers.length + dependents.length;
 
+  // the three text fields keep local drafts so closing the drawer can flush a
+  // pending edit even when Escape skipped the blur (vanilla `flushCardFields`)
+  const [draft, setDraft] = useState({ title: "", notes: "", due: "" });
+  const [blockerQuery, setBlockerQuery] = useState("");
+  const [labelValue, setLabelValue] = useState("");
+  const cardId = target?.id ?? null;
+
+  useEffect(() => {
+    if (target) setDraft({ title: target.title, notes: target.notes, due: target.due });
+    setBlockerQuery("");
+    // drafts re-seed per card, never per commit — a priority click must not
+    // wipe a half-typed title
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardId, open]);
+
+  const flushPending = useCallback(() => {
+    if (!target) return;
+    const patch: Partial<Card> = {};
+    const title = draft.title.trim();
+    if (title && title !== target.title) patch.title = title;
+    if (draft.notes !== target.notes) patch.notes = draft.notes;
+    if (draft.due !== target.due) patch.due = draft.due;
+    if (Object.keys(patch).length) onUpdateCard(target.id, patch);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target, draft, onUpdateCard]);
+
+  const close = useCallback(() => {
+    flushPending();
+    onClose();
+  }, [flushPending, onClose]);
+
+  // Escape closes the drawer unless the confirm gate holds the action slot
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (blockedByConfirm || document.querySelector("dialog[open]:not(#card-dialog)")) return;
+      event.preventDefault();
+      close();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [open, blockedByConfirm, close]);
+
+  // focus returns to the card the drawer came from
+  const lastCardId = useRef<string | null>(null);
+  useEffect(() => {
+    if (open && target) lastCardId.current = target.id;
+    if (!open && lastCardId.current) {
+      const again = document.querySelector<HTMLElement>(
+        `.card[data-card-id="${lastCardId.current}"] .card-main`
+      );
+      if (again) again.focus({ preventScroll: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const addBlockerCandidate = (blockerId: string) => {
+    if (!target) return;
+    setBlockerQuery("");
+    onAddBlocker(target.id, blockerId);
+  };
+
+  const candidates: Array<{ candidate: Card; column: Column }> = [];
+  if (board && target) {
+    for (const col of board.columns) {
+      for (const id of col.cardIds) {
+        const candidate = card(board, id);
+        if (!candidate || candidate.id === target.id) continue;
+        if (target.blockedBy.includes(candidate.id)) continue;
+        if (blockerQuery && !candidate.title.toLowerCase().includes(blockerQuery.toLowerCase())) continue;
+        candidates.push({ candidate, column: col });
+      }
+    }
+  }
+  const shownCandidates = candidates.slice(0, 8);
+
   return (
-    <dialog className="drawer" id="card-dialog" aria-labelledby="card-kicker" open={open} onClose={onClose}>
+    <dialog
+      className="drawer"
+      id="card-dialog"
+      aria-labelledby="card-kicker"
+      open={open}
+      onClose={close}
+      onClick={(event) => {
+        // a click on the ::backdrop is delivered to the dialog element itself,
+        // so the test is whether the point is inside the dialog's own box
+        const box = event.currentTarget.getBoundingClientRect();
+        const inside =
+          event.clientX >= box.left && event.clientX <= box.right && event.clientY >= box.top && event.clientY <= box.bottom;
+        if (inside) return;
+        close();
+      }}
+    >
       <div className="drawer-head">
         <span className="drawer-kicker" id="card-kicker">
           {target ? `CARD #${target.number} / ${column?.name ?? "UNPLACED"}` : "CARD"}
         </span>
-        <button className="btn" id="card-close" type="button" aria-label="Close card" onClick={onClose}>
+        <button className="btn" id="card-close" type="button" aria-label="Close card" onClick={close}>
           CLOSE
         </button>
       </div>
       <div className="drawer-body">
         <label className="field">
           <span className="field-label">TITLE</span>
-          <input className="input" id="card-title" type="text" spellCheck={false} defaultValue={target?.title ?? ""} key={target ? `title-${target.id}` : "title"} />
+          <input
+            className="input"
+            id="card-title"
+            type="text"
+            spellCheck={false}
+            value={draft.title}
+            onChange={(event) => setDraft((prev) => ({ ...prev, title: event.target.value }))}
+            onBlur={() => {
+              if (!target) return;
+              const ok = onUpdateCard(target.id, { title: draft.title });
+              if (!ok) setDraft((prev) => ({ ...prev, title: target.title }));
+            }}
+          />
         </label>
         <label className="field">
           <span className="field-label">NOTES</span>
-          <textarea className="input" id="card-notes" rows={5} spellCheck={false} defaultValue={target?.notes ?? ""} key={target ? `notes-${target.id}` : "notes"} />
+          <textarea
+            className="input"
+            id="card-notes"
+            rows={5}
+            spellCheck={false}
+            value={draft.notes}
+            onChange={(event) => setDraft((prev) => ({ ...prev, notes: event.target.value }))}
+            onBlur={() => {
+              if (target) onUpdateCard(target.id, { notes: draft.notes });
+            }}
+          />
         </label>
         <div className="field">
           <span className="field-label">PRIORITY</span>
@@ -1067,6 +1862,7 @@ function CardDialog({
                 aria-pressed={target?.priority === option.value ? "true" : "false"}
                 data-priority={String(option.value)}
                 key={option.value}
+                onClick={() => target && onUpdateCard(target.id, { priority: option.value })}
               >
                 {option.label}
               </button>
@@ -1076,8 +1872,26 @@ function CardDialog({
         <div className="field">
           <span className="field-label">DUE</span>
           <div className="row">
-            <input className="input" id="card-due" type="date" defaultValue={target?.due ?? ""} key={target ? `due-${target.id}` : "due"} />
-            <button className="btn" id="card-due-clear" type="button">
+            <input
+              className="input"
+              id="card-due"
+              type="date"
+              value={draft.due}
+              onChange={(event) => setDraft((prev) => ({ ...prev, due: event.target.value }))}
+              onBlur={() => {
+                if (target) onUpdateCard(target.id, { due: draft.due });
+              }}
+            />
+            <button
+              className="btn"
+              id="card-due-clear"
+              type="button"
+              onClick={() => {
+                if (!target) return;
+                setDraft((prev) => ({ ...prev, due: "" }));
+                onUpdateCard(target.id, { due: "" });
+              }}
+            >
               CLEAR
             </button>
           </div>
@@ -1087,20 +1901,51 @@ function CardDialog({
           <div className="chips" id="card-labels">
             {target && target.labels.length
               ? target.labels.map((label) => (
-                  <button className="chip" type="button" data-remove-label={label} title={`Remove label ${label}`} key={label}>
+                  <button
+                    className="chip"
+                    type="button"
+                    data-remove-label={label}
+                    title={`Remove label ${label}`}
+                    key={label}
+                    onClick={() => {
+                      if (target) onUpdateCard(target.id, { labels: target.labels.filter((l) => l !== label) });
+                    }}
+                  >
                     {`${label} ×`}
                   </button>
                 ))
               : target && <span className="hint">NO LABELS</span>}
           </div>
           <div className="row">
-            <input className="input" id="card-label-input" list="label-options" placeholder="ADD LABEL" autoComplete="off" spellCheck={false} />
+            <input
+              className="input"
+              id="card-label-input"
+              list="label-options"
+              placeholder="ADD LABEL"
+              autoComplete="off"
+              spellCheck={false}
+              value={labelValue}
+              onChange={(event) => setLabelValue(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter" || !target) return;
+                event.preventDefault();
+                if (onAddLabel(target.id, labelValue) !== "empty") setLabelValue("");
+              }}
+            />
             <datalist id="label-options">
               {[...new Set(Object.values(board?.cards ?? {}).flatMap((c) => c.labels))].sort().map((label) => (
                 <option value={label} key={label} />
               ))}
             </datalist>
-            <button className="btn" id="card-label-add" type="button">
+            <button
+              className="btn"
+              id="card-label-add"
+              type="button"
+              onClick={() => {
+                if (!target) return;
+                if (onAddLabel(target.id, labelValue) !== "empty") setLabelValue("");
+              }}
+            >
               ADD
             </button>
           </div>
@@ -1124,6 +1969,7 @@ function CardDialog({
                     title={done ? "Completed blocker — remove the link" : "Unfinished blocker — remove the link"}
                     style={done ? undefined : { color: "var(--color-accent)" }}
                     key={blocker.id}
+                    onClick={() => target && onRemoveBlocker(target.id, blocker.id)}
                   >
                     {`#${blocker.number} ${blocker.title} — ${done ? "DONE" : blockerColumn?.name ?? "UNPLACED"} ×`}
                   </button>
@@ -1131,23 +1977,52 @@ function CardDialog({
               })
             )}
           </div>
-          <input className="input" id="card-blocker-input" placeholder="ADD BLOCKER — TYPE TO FILTER" autoComplete="off" spellCheck={false} />
+          <input
+            className="input"
+            id="card-blocker-input"
+            placeholder="ADD BLOCKER — TYPE TO FILTER"
+            autoComplete="off"
+            spellCheck={false}
+            value={blockerQuery}
+            onChange={(event) => setBlockerQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" || !target) return;
+              event.preventDefault();
+              const pickable = shownCandidates.find((entry) => board && !cyclePathFor(board, target.id, entry.candidate.id));
+              if (!pickable) {
+                onNotify("warn", "NO ADDABLE CARD MATCHES THAT FILTER");
+                return;
+              }
+              addBlockerCandidate(pickable.candidate.id);
+            }}
+          />
           <div className="picker" id="card-blocker-picker">
-            {board &&
-              target &&
-              board.columns
-                .flatMap((col) => col.cardIds.map((id) => ({ candidate: card(board, id), column: col })))
-                .filter(
-                  (entry): entry is { candidate: Card; column: Column } =>
-                    !!entry.candidate && entry.candidate.id !== target.id && !target.blockedBy.includes(entry.candidate.id)
-                )
-                .slice(0, 8)
-                .map(({ candidate, column: candidateColumn }) => (
-                  <button type="button" data-blocker-id={candidate.id} title={`Make "${candidate.title}" block this card`} key={candidate.id}>
-                    <span>{candidate.title}</span>
-                    <span className="picker-col">{` — ${candidateColumn.name}`}</span>
-                  </button>
-                ))}
+            {board && target && !shownCandidates.length && (
+              <p className="picker-note">{blockerQuery ? "NO MATCHING CARD" : "NO OTHER CARDS AVAILABLE"}</p>
+            )}
+            {shownCandidates.map(({ candidate, column: candidateColumn }) => {
+              const cycle = board ? cyclePathFor(board, target!.id, candidate.id) : null;
+              return (
+                <button
+                  type="button"
+                  data-blocker-id={candidate.id}
+                  disabled={!!cycle}
+                  title={cycle ? `Would create a cycle: ${cycle.map((id) => board!.cards[id]?.title ?? id).join(" → ")}` : `Make "${candidate.title}" block this card`}
+                  key={candidate.id}
+                  onClick={() => {
+                    if (cycle) return;
+                    addBlockerCandidate(candidate.id);
+                  }}
+                >
+                  <span>{candidate.title}</span>
+                  <span className="picker-col">{` — ${candidateColumn.name}`}</span>
+                  {cycle && <span className="picker-col"> · CYCLE</span>}
+                </button>
+              );
+            })}
+            {board && target && candidates.length > shownCandidates.length && (
+              <p className="picker-note">{`+${candidates.length - shownCandidates.length} MORE — REFINE THE FILTER`}</p>
+            )}
           </div>
         </div>
         <div className="field">
@@ -1171,7 +2046,14 @@ function CardDialog({
           <span className="field-label">MOVE TO</span>
           <div className="seg" id="card-move" role="group" aria-label="Move to column">
             {(board?.columns ?? []).map((option) => (
-              <button type="button" data-move-to={option.id} disabled={option.id === column?.id} title={option.id === column?.id ? "Current column" : undefined} key={option.id}>
+              <button
+                type="button"
+                data-move-to={option.id}
+                disabled={option.id === column?.id}
+                title={option.id === column?.id ? "Current column" : undefined}
+                key={option.id}
+                onClick={() => target && onAttemptMove(target.id, option.id, undefined, "end")}
+              >
                 {option.name}
               </button>
             ))}
@@ -1182,7 +2064,7 @@ function CardDialog({
         </p>
       </div>
       <div className="drawer-foot">
-        <button className="btn danger" id="card-delete" type="button">
+        <button className="btn danger" id="card-delete" type="button" onClick={() => target && onDelete(target.id)}>
           {linkCount ? `DELETE CARD (${linkCount} LINK(S) INVOLVED)` : "DELETE CARD"}
         </button>
       </div>
