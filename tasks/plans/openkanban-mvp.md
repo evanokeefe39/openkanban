@@ -34,13 +34,19 @@ reflect real state, segmented counters, viewport fit with no page scroll.
 | Columns | Backlog / To Do / In Progress / Review / Done, editable in a settings screen |
 | Card fields | Title, notes, due date, priority, labels (+ the derived dependency graph) |
 
+The card-fields answer ticked four options at once, one of which declined extra fields ("notes
+only") and three of which added them. Read as the union: title, notes, due date, priority and
+labels all shipped, plus the dependency graph that no option mentioned.
+
 ### Design direction (interface-design checkpoint)
 - **Domain**: dispatch board, job ticket, station, pull system, wiring diagram, engraved plate.
 - **Colour world** (inherited, not invented): near-black velvet `#0a0608`, indigo panel `#141420`,
   signal amber `#f59e0b`, VU green `#22c55e`, alarm red `#ef4444`, ivory sticky `#F9FFD0`.
 - **Signature**: the board is a wiring diagram — hovering a card lights its upstream chain (amber)
-  and downstream chain (indigo); column headers carry lamps whose colour is derived from whether
-  that column holds anything actionable.
+  and downstream chain (indigo). Column headers carry only the name, the hit count and the add
+  button; no status lamp and no colour swatch beside a name. Colour is reserved for meaning that
+  cannot be spelled out — priority rails, and the blocked / override / due chips — and labels are
+  deliberately plain text (their identity is the word, not a hue).
 - **Rejecting defaults**: rounded shadowed sticky cards (Trello) → zero-radius plates, borders-only
   depth, no shadows; pastel column tints → lightness steps only; priority as a coloured pill
   everywhere → a 2px top rule plus a monospace tag.
@@ -212,10 +218,31 @@ the header lamp reports storage write truth.
 | C13 filter honesty | done | search narrows to matching cards over title+notes+labels, `+N HIDDEN` per column, `NO CARDS MATCH` plate, counters stay whole-board |
 | C14 `file://` boot | done | classic script, no modules, no local fetches — served and direct-open paths identical |
 | Edge cases 1–26 | done | all exercised in the verification runs below |
-| Browser verification | done | 5 scripted runs, 128 assertions, no console errors |
+| Browser verification | done | 7 pass/fail runs + 3 measurement passes, no console errors, no failed requests |
 | No new dependencies | done | Google Fonts is a CDN link; zero npm packages |
 
-Total assertions: 75 (first pass) + 17 (round trip/recovery) + 14 (native drag gate) + 12 (recompute) + 10 (layout/contrast) = 128, all green after the fixes below.
+Verification tally, stated exactly: 163 pass/fail assertions across 7 runs (75 interaction, 17
+round-trip/recovery, 14 native-drag gate, 12 blocked-state recompute, 24 header/rename robustness,
+7 real-click gate, 14 colour-swatch removal). Eleven failed on first pass, and every one traced to
+the test rather than the app — guessed counts, an assertion truncated before the string it looked
+for, `display: inline-flex` blockifying to `flex` for a flex item, and three fixtures where the
+"blocked" card's blocker sat in a DONE column so the card was legitimately unblocked. Each was
+re-run in corrected form and passed. Three further passes yielded measurements rather than
+pass/fail series: computed contrast ratios, per-label filter exactness against the store, and
+layout geometry at 375px and 1440px.
+
+Export evidence, split honestly: the payload is test-verified twice over — captured from the app's
+own `URL.createObjectURL` call by a script injected into the page's world, and proven complete by a
+byte-identical export → import round trip. The final blob → `<a download>` → file step is
+code-inspected only: this headless harness produced no download event and wrote no file, and
+`page.evaluate` shares neither globals nor DOM prototypes with the page script, so the DOM idiom
+cannot be observed from outside. Nothing in `exportBoard` was changed on the strength of a failed
+interception.
+
+The storage-error lamp state (lamp reads `STORAGE ERROR`, one toast per failure streak) is likewise
+code-inspected: inducing it needs a failing `localStorage` write, which cannot be forced here
+without patching globals the page does not read. The corrupt-payload recovery path — the one a user
+can actually hit — is test-verified end to end.
 
 ## Defects found and fixed during verification
 
@@ -232,8 +259,11 @@ Total assertions: 75 (first pass) + 17 (round trip/recovery) + 14 (native drag g
 5. **`boot()` returned before binding listeners** on the repaired, seeded, and error paths — the
    board would have rendered but been dead to input. Found by reading the control flow back.
 6. **Column geometry** — columns were content-height, leaving half the viewport empty. Now
-   full-height tracks with the add-card shelf pinned to the bottom, which also makes the drop
-   target large.
+   full-height tracks, so the drop target is large and the board reads as a board.
+7. **Narrow-viewport blowout** — at 375px a `nowrap` header row forced the document to 747px and
+   the whole page scrolled sideways. The app grid is now `minmax(0, 1fr)` with the header and
+   filter strips scrolling internally: measured zero page-level horizontal scroll at 375px and
+   1440px, with the columns still 268px and no card overflow at either width.
 
 Claims that did not survive checking: a visual audit asserted the columns had different widths and
 that DONE was narrower; measurement shows five × 268px and zero card/chip overflow. The same audit's
@@ -262,8 +292,16 @@ that DONE was narrower; measurement shows five × 268px and zero card/chip overf
 8. **Native HTML5 drag, with the drawer's MOVE TO row as the universal path** (keyboard, touch,
    and the escape hatch when a pointer drag is awkward). Consequence: medium — no DnD dependency.
 9. **Priority is encoded twice** (2px rail + text chip) because colour alone is not an encoding.
-   Consequence: low. The user asked what the bars meant, so a legend now documents it and hides
-   itself when no card carries a priority.
+   Consequence: low. The user asked what the bars meant, so a legend now documents it, hides itself
+   when no card carries a priority, and renders its `NONE` key hollow — a card with no priority has
+   no rail, so a solid grey key would have taught the wrong thing.
+10. **No colour squares beside column names or on label chips** (user-directed after the first
+    build). Consequence: low, but it removed the last decorative colour — the column status lamp
+    and the hashed label palette are gone, and the palette code was deleted rather than left
+    unused. Selecting a filter chip now reads through the ivory ON fill instead of a swatch.
+11. **Add-card moved into the column header** (user-directed). A 22px `+` with a 38px hit area and
+    the hit count immediately to its left, opening the composer at the top of the list; empty
+    columns keep a plate-sized add action so a fresh board is not five dead frames.
 
 ## Reasoning trace
 

@@ -108,6 +108,8 @@ body {
    ============================================================ */
 .app {
   display: grid;
+  /* minmax(0,1fr) stops a nowrap row from forcing the document wider than the viewport */
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto auto minmax(0, 1fr);
   height: 100dvh;
 }
@@ -119,6 +121,8 @@ body {
   padding: 6px 12px;
   border-bottom: 1px solid var(--line);
   background: var(--color-background-subtle);
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .brand {
@@ -302,6 +306,11 @@ body {
 .prio-key[data-prio='3'] i {
   background: #6b7280;
 }
+/* NONE draws no rail at all on a card, so the key is hollow rather than grey */
+.prio-key[data-prio='0'] i {
+  background: transparent;
+  border: 1px dashed var(--color-foreground-muted);
+}
 
 .input {
   font-family: inherit;
@@ -395,11 +404,12 @@ button.chip:hover {
   background: var(--color-surface-elevated);
   color: var(--color-foreground);
 }
-.chip .dot {
-  width: 6px;
-  height: 6px;
-  display: block;
-  flex: 0 0 auto;
+/* selected filter chip — the ivory ON treatment used by the segmented controls */
+button.chip[aria-pressed='true'],
+button.chip[aria-pressed='true']:hover {
+  background: var(--ivory);
+  border-color: var(--ivory);
+  color: #000;
 }
 .chip.blocked {
   color: #f87171;
@@ -476,17 +486,38 @@ button.chip:hover {
   color: var(--color-foreground-muted);
   font-variant-numeric: tabular-nums;
 }
-.lamp-sm {
-  width: 7px;
-  height: 7px;
+.col-add {
+  position: relative;
   flex: 0 0 auto;
-  background: var(--color-foreground-muted);
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--color-foreground-secondary);
+  background: transparent;
+  border: 1px solid var(--line);
+  cursor: pointer;
+  transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out),
+    border-color 120ms var(--ease-out), transform 100ms var(--ease-out);
 }
-.lamp-sm[data-state='go'] {
-  background: var(--color-vu-green);
+/* visible control is 22px; the interactive area is 38px per WCAG hit-area guidance */
+.col-add::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
 }
-.lamp-sm[data-state='blocked'] {
-  background: var(--color-accent);
+.col-add:hover {
+  background: var(--color-surface-elevated);
+  color: var(--ivory);
+  border-color: var(--line-strong);
+}
+.col-add:active {
+  transform: scale(0.97);
 }
 
 .col-body {
@@ -502,27 +533,6 @@ button.chip:hover {
 .col-body.drag-over {
   background: rgba(99, 102, 241, 0.08);
 }
-.col-foot {
-  border-top: 1px solid var(--line);
-}
-.add-card {
-  width: 100%;
-  text-align: left;
-  font-family: inherit;
-  font-size: 10px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--color-foreground-secondary);
-  background: transparent;
-  border: 0;
-  padding: 8px;
-  cursor: pointer;
-  transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out);
-}
-.add-card:hover {
-  background: var(--color-surface-elevated);
-  color: var(--ivory);
-}
 
 .plate {
   border: 1px dashed var(--line);
@@ -532,6 +542,19 @@ button.chip:hover {
   text-transform: uppercase;
   padding: 14px 10px;
   text-align: center;
+}
+.plate-action {
+  width: 100%;
+  font-family: inherit;
+  letter-spacing: 0.12em;
+  color: var(--color-foreground-secondary);
+  background: transparent;
+  cursor: pointer;
+  transition: border-color 120ms var(--ease-out), color 120ms var(--ease-out);
+}
+.plate-action:hover {
+  border-color: var(--line-strong);
+  color: var(--ivory);
 }
 
 /* ============================================================

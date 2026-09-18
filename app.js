@@ -36,12 +36,6 @@
     { value: 3, label: 'P2', title: 'P2 — low', color: '#6b7280' },
   ];
 
-  /** Label colours reuse the reference instrument's EQ band palette. */
-  const LABEL_COLORS = [
-    '#ef4444', '#f97316', '#f59e0b', '#eab308',
-    '#22c55e', '#14b8a6', '#3b82f6', '#8b5cf6',
-  ];
-
   const DEFAULT_COLUMNS = [
     { id: 'col-backlog', name: 'BACKLOG', gate: false, done: false },
     { id: 'col-todo', name: 'TO DO', gate: false, done: false },
@@ -106,12 +100,6 @@
     return `${isoDate(date)} ${String(date.getHours()).padStart(2, '0')}:${String(
       date.getMinutes()
     ).padStart(2, '0')}`;
-  }
-
-  function labelColor(name) {
-    let hash = 0;
-    for (let i = 0; i < name.length; i += 1) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
-    return LABEL_COLORS[hash % LABEL_COLORS.length];
   }
 
   function titleCaseLabel(name) {
@@ -791,10 +779,6 @@
       chip.dataset.label = label;
       chip.setAttribute('aria-pressed', ui.labels.has(label) ? 'true' : 'false');
       chip.title = `Filter by ${label}`;
-      const dot = el('span', 'dot');
-      dot.style.background = labelColor(label);
-      chip.prepend(dot);
-      if (ui.labels.has(label)) chip.style.color = 'var(--color-foreground)';
       host.appendChild(chip);
     }
     $('filter-blocked').setAttribute('aria-pressed', ui.blockedOnly ? 'true' : 'false');
@@ -852,65 +836,71 @@
     const hidden = cards.length - shown.length;
 
     const head = el('div', 'col-head');
-    const lamp = el('span', 'lamp-sm');
-    const actionable = cards.filter((c) => !isBlocked(c.id)).length;
-    lamp.dataset.state = !cards.length ? 'idle' : actionable ? 'go' : 'blocked';
-    lamp.title = !cards.length
-      ? 'empty'
-      : `${actionable} unblocked of ${cards.length} card(s)`;
-    head.appendChild(lamp);
     head.appendChild(el('h2', 'col-name', column.name));
     if (hidden) head.appendChild(el('span', 'col-hidden', `+${hidden} HIDDEN`));
     head.appendChild(el('span', 'col-count', String(cards.length)));
+    const addButton = el('button', 'col-add', '+');
+    addButton.type = 'button';
+    addButton.dataset.addTo = column.id;
+    addButton.title = 'Add card';
+    addButton.setAttribute('aria-label', `Add card to ${column.name}`);
+    head.appendChild(addButton);
     wrapper.appendChild(head);
 
     const body = el('div', 'col-body');
     body.dataset.columnId = column.id;
+    if (ui.inlineAdd && ui.inlineAdd.columnId === column.id) body.appendChild(buildAddForm(column));
     if (!shown.length) {
-      body.appendChild(el('p', 'plate', cards.length ? 'ALL HIDDEN BY FILTER' : 'EMPTY'));
+      if (cards.length) {
+        body.appendChild(el('p', 'plate', 'ALL HIDDEN BY FILTER'));
+      } else {
+        const emptyAction = el('button', 'plate plate-action', '+ ADD CARD');
+        emptyAction.type = 'button';
+        emptyAction.dataset.addTo = column.id;
+        emptyAction.title = 'Add card';
+        emptyAction.setAttribute('aria-label', `Add card to ${column.name}`);
+        body.appendChild(emptyAction);
+      }
     } else {
       for (const target of shown) body.appendChild(buildCard(target));
     }
     wrapper.appendChild(body);
 
-    const foot = el('div', 'col-foot');
-    if (ui.inlineAdd && ui.inlineAdd.columnId === column.id) {
-      const form = el('form', 'add-form');
-      const textarea = el('textarea', 'input');
-      textarea.rows = 2;
-      textarea.placeholder = 'CARD TITLE';
-      textarea.value = ui.inlineAdd.value || '';
-      textarea.setAttribute('aria-label', `New card in ${column.name}`);
-      textarea.addEventListener('input', () => {
-        ui.inlineAdd.value = textarea.value;
-      });
-      textarea.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter' && !event.shiftKey) {
-          event.preventDefault();
-          const title = textarea.value;
-          ui.inlineAdd = { columnId: column.id, value: '' };
-          const created = addCard(column.id, title);
-          if (!created) render();
-        } else if (event.key === 'Escape') {
-          event.preventDefault();
-          ui.inlineAdd = null;
-          render();
-        }
-      });
-      const hint = el('p', 'hint', 'ENTER TO ADD · SHIFT+ENTER FOR A NEW LINE · ESC TO CLOSE');
-      form.appendChild(textarea);
-      form.appendChild(hint);
-      form.addEventListener('submit', (event) => event.preventDefault());
-      foot.appendChild(form);
-    } else {
-      const add = el('button', 'add-card', '+ ADD CARD');
-      add.type = 'button';
-      add.dataset.addTo = column.id;
-      foot.appendChild(add);
-    }
-    wrapper.appendChild(foot);
-
     return wrapper;
+  }
+
+  function buildAddForm(column) {
+    const form = el('form', 'add-form');
+    const textarea = el('textarea', 'input');
+    textarea.rows = 2;
+    textarea.placeholder = 'CARD TITLE';
+    textarea.value = (ui.inlineAdd && ui.inlineAdd.value) || '';
+    textarea.setAttribute('aria-label', `New card in ${column.name}`);
+    textarea.addEventListener('input', () => {
+      ui.inlineAdd.value = textarea.value;
+    });
+    textarea.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        const title = textarea.value;
+        ui.inlineAdd = { columnId: column.id, value: '' };
+        const created = addCard(column.id, title);
+        if (!created) {
+          render();
+          return;
+        }
+        const node = $('board').querySelector(`[data-card-id="${created}"]`);
+        if (node) node.scrollIntoView({ block: 'nearest' });
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        ui.inlineAdd = null;
+        render();
+      }
+    });
+    form.appendChild(textarea);
+    form.appendChild(el('p', 'hint', 'ENTER TO ADD · SHIFT+ENTER FOR A NEW LINE · ESC TO CLOSE'));
+    form.addEventListener('submit', (event) => event.preventDefault());
+    return form;
   }
 
   /**
@@ -999,13 +989,7 @@
       chip.title = target.notes.trim().slice(0, 200);
       meta.appendChild(chip);
     }
-    for (const label of target.labels) {
-      const chip = el('span', 'chip label', label);
-      const dot = el('span', 'dot');
-      dot.style.background = labelColor(label);
-      chip.prepend(dot);
-      meta.appendChild(chip);
-    }
+    for (const label of target.labels) meta.appendChild(el('span', 'chip', label));
     main.appendChild(meta);
 
     wrapper.appendChild(main);
@@ -1059,9 +1043,6 @@
       chip.type = 'button';
       chip.dataset.removeLabel = label;
       chip.title = `Remove label ${label}`;
-      const dot = el('span', 'dot');
-      dot.style.background = labelColor(label);
-      chip.prepend(dot);
       labelsHost.appendChild(chip);
     }
 
