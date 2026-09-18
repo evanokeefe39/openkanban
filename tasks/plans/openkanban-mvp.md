@@ -278,8 +278,9 @@ Verification tally — the runs, each counted once, summing to the total:
 7 regression over the card surface change, 7 column-header checks, 9 ink-surface checks,
 6 ring-separator checks, 6 overlay-contrast checks, 14 reset-flow checks, 5 surface-and-header
 colour checks, 9 toolbar-restructure checks, 8 full-height-layout checks, 4 centring checks, 6
-bar-width checks, plus the committed smoke suite (19 checks) run end to end.
-**399 assertions across 30 runs.**
+bar-width checks, 4 seed-and-centring checks, 3 filter-surface checks, plus the committed smoke
+suite (19 checks) run end to end.
+**406 assertions across 33 runs.**
 
 Thirty-one failed on first pass. Two were real product defects, both found by a test rather than
 by review, both fixed: the icon CDN executing nothing (defect 11) and a chip click dismissing the
@@ -439,6 +440,13 @@ horizontal scroll: 0), which is the standard kanban affordance, and at COMPACT d
     the toolbar reported it as present. It is now `flex: 0 0 auto` with `clamp(130px, 17vw, 220px)`,
     measured at 390/700/900/1200/1440/1920 — a real width at every one, and the bar scrolls instead of
     collapsing a control. Centring holds (13px of true centre) wherever the bar is not scrolling.
+22. **The seed's column assignment was restored to its original spread**, after the user's own
+    session had moved cards into DONE while confirming that completing a blocker clears its
+    dependents — which it does, measured: moving `c-shell` to DONE dropped the board from 7 blocked to
+    4 by unblocking `c-store`, `c-chain` and `c-drag` transitively, and moving it back re-blocked all
+    seven. Worth recording because the layout is load-bearing for the screenshots: the seed is spread
+    across all five columns on purpose, so the demo shows a board with activity in every state.
+
 Claims that did not survive checking: a visual audit asserted the columns had different widths and
 that DONE was narrower; measurement shows five × 268px and zero card/chip overflow. The same audit's
 "low-contrast" complaint was right, but for a different reason than stated (item 1). Three more from
@@ -572,6 +580,26 @@ which is why the README carries no CI badge and describes the workflow in prose 
     at the viewport foot whether they hold eleven cards or one. An empty column then has a definite
     place to drop a card, and the board reads as a board rather than as five lists of different
     lengths.
+28. **The filter pane is the page's own fill** (user-directed, after two rejected attempts: an opaque
+    ink panel, then ink at 88% with a backdrop blur). Both were solving a problem that only existed
+    because the pane had its own colour — a second surface in a design whose whole rule is that a
+    surface differs from the page only when it floats *over* the board. It does float, but the 1px
+    rule says that on its own; the pane now measures byte-identical to the page (`rgb(10, 6, 8)`, no
+    blur) and reads as an overlay because the board behind it is dark and the rule is bright.
+    Consequence: ink survives in exactly two places, the modals and the toasts, which genuinely
+    appear over content they must not be confused with.
+29. **Columns are centred for any number the user has** (user-directed: "for whatever number of
+    columns the user has created they should be centered not left aligned"). The board row is
+    `width: max-content` with `margin-inline: auto`, and the auto margins are the mechanism — they
+    resolve to zero the moment the row is wider than its container, so a board that cannot fit still
+    scrolls from the first column instead of having its left edge clipped. Measured at 0px of true
+    centre for five and for three columns, and scrolling cleanly at ten (2752px of row in a 1440px
+    viewport).
+30. **The seed is a demo, not a plan** — its layout deliberately spreads cards across all five
+    columns so every feature has something to show, which means several cards sit in columns their
+    blockers never reached. That is why the seed reads `11 CARDS · 7 BLOCKED · 4 OVERRIDE` while
+    being correct: the overrides are the gate honouring its rule, not a bug in it. A board of one's
+    own work would not look like this, and the sample is meant to be replaced.
 
 ## Reasoning trace
 
