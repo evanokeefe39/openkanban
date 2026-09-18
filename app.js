@@ -31,9 +31,62 @@
 
   const PRIORITIES = [
     { value: 0, label: 'NONE', title: 'No priority' },
-    { value: 1, label: 'P0', title: 'P0 — critical', color: '#ef4444' },
-    { value: 2, label: 'P1', title: 'P1 — high', color: '#f59e0b' },
-    { value: 3, label: 'P2', title: 'P2 — low', color: '#6b7280' },
+    { value: 1, label: 'P0', title: 'P0 — critical' },
+    { value: 2, label: 'P1', title: 'P1 — high' },
+    { value: 3, label: 'P2', title: 'P2 — low' },
+  ];
+
+  /** Filter categories behind the strip chevron. Chips within a group OR; groups AND. */
+  const STATUS_FILTERS = [
+    { id: 'blocked', label: 'BLOCKED', title: 'Cards with at least one unfinished blocker' },
+    { id: 'override', label: 'OVERRIDE', title: 'Blocked cards sitting in a gated column' },
+    { id: 'blocking', label: 'BLOCKING', title: 'Cards that other cards wait on' },
+  ];
+
+  const DUE_FILTERS = [
+    { id: 'overdue', label: 'OVERDUE', title: 'Past due and not in a done column' },
+    { id: 'today', label: 'DUE TODAY', title: 'Due today and not in a done column' },
+  ];
+
+  /**
+   * View options are presentation state, kept per browser rather than in the board document, so
+   * importing someone else's board does not rewrite how you like to look at it.
+   */
+  const VIEW_KEY = 'openkanban.view.v1';
+  const DEFAULT_VIEW = {
+    density: 'compact',
+    showPriority: true,
+    showLabels: true,
+    showDue: true,
+    showStatus: true,
+    highlightPriority: false,
+  };
+  const VIEW_TOGGLES = [
+    {
+      key: 'showPriority',
+      label: 'PRIORITY RAIL + TAGS',
+      title: 'The 2px rail on the card edge and the P0/P1/P2 tag',
+    },
+    {
+      key: 'showLabels',
+      label: 'LABELS ON CARDS',
+      title: 'Label chips on the card face — the labels themselves are untouched',
+    },
+    {
+      key: 'showDue',
+      label: 'DUE DATES',
+      title: 'Due, due-today and overdue chips on the card face',
+    },
+    {
+      key: 'showStatus',
+      label: 'BLOCKER BADGES',
+      title: 'Blocked, override and blocks chips — hiding them does not change gating',
+    },
+    {
+      key: 'highlightPriority',
+      label: 'HIGHLIGHT BY PRIORITY',
+      title: 'Tint the whole card by priority instead of just the rail',
+    },
   ];
 
   const DEFAULT_COLUMNS = [
@@ -115,6 +168,7 @@
   // ==========================================================================
 
   let board = null;
+  let view = { ...DEFAULT_VIEW };
   let lastWritten = null;
   let lastWriteTime = null;
   let writeErrorStreak = false;
@@ -122,7 +176,10 @@
   const ui = {
     query: '',
     labels: new Set(),
-    blockedOnly: false,
+    priorities: new Set(),
+    statuses: new Set(),
+    due: new Set(),
+    filterOpen: false,
     dragId: null,
     activeCardId: null,
     inlineAdd: null,
@@ -316,6 +373,53 @@
     $('storage-lamp-text').textContent =
       state === 'saved' ? 'SAVED' : state === 'error' ? 'STORAGE ERROR' : 'READY';
     lamp.title = detail || '';
+  }
+
+  function loadView() {
+    let raw;
+    try {
+      raw = localStorage.getItem(VIEW_KEY);
+    } catch (error) {
+      return { view: { ...DEFAULT_VIEW }, problem: `storage unavailable (${error.message})` };
+    }
+    if (!raw) return { view: { ...DEFAULT_VIEW }, problem: null };
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return { view: { ...DEFAULT_VIEW }, problem: 'saved view options were not valid JSON' };
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { view: { ...DEFAULT_VIEW }, problem: 'saved view options were not an object' };
+    }
+    const next = { ...DEFAULT_VIEW };
+    let problem = null;
+    if (parsed.density === 'compact' || parsed.density === 'normal') next.density = parsed.density;
+    else if (parsed.density !== undefined) problem = `unknown density "${parsed.density}"`;
+    for (const toggle of VIEW_TOGGLES) {
+      const value = parsed[toggle.key];
+      if (typeof value === 'boolean') next[toggle.key] = value;
+      else if (value !== undefined && !problem) problem = `"${toggle.key}" was not a boolean`;
+    }
+    return { view: next, problem };
+  }
+
+  function saveView() {
+    try {
+      localStorage.setItem(VIEW_KEY, JSON.stringify(view));
+    } catch (error) {
+      toast('error', `VIEW OPTIONS NOT SAVED — ${error.message}`);
+      return;
+    }
+    if ($('settings-dialog').open) renderStorageInfo();
+  }
+
+  function applyView() {
+    const root = document.documentElement;
+    root.dataset.density = view.density;
+    for (const toggle of VIEW_TOGGLES) {
+      root.dataset[toggle.key] = view[toggle.key] ? '1' : '0';
+    }
   }
 
   // ==========================================================================
@@ -720,19 +824,68 @@
   // Filtering
   // ==========================================================================
 
+  function matchesStatus(target, status) {
+    if (status === 'blocked') return isBlocked(target.id);
+    if (status === 'override') {
+      const column = columnOf(target.id);
+      return isBlocked(target.id) && !!(column && column.gate);
+    }
+    if (status === 'blocking') return dependentsOf(target.id).length > 0;
+    return true;
+  }
+
+  function matchesDue(target, kind) {
+    if (!target.due || isDone(target.id)) return false;
+    const delta = daysUntil(target.due);
+    if (kind === 'overdue') return delta < 0;
+    if (kind === 'today') return delta === 0;
+    return true;
+  }
+
+  /** Chips within a category are OR'd; separate categories are AND'd. */
   function matchesFilter(target) {
-    if (ui.blockedOnly && !isBlocked(target.id)) return false;
-    if (ui.labels.size && !target.labels.some((label) => ui.labels.has(label))) return false;
     const query = ui.query.trim().toLowerCase();
     if (query) {
       const haystack = `${target.title} ${target.notes} ${target.labels.join(' ')}`.toLowerCase();
       if (!haystack.includes(query)) return false;
     }
+    if (ui.labels.size && !target.labels.some((label) => ui.labels.has(label))) return false;
+    if (ui.priorities.size && !ui.priorities.has(target.priority)) return false;
+    if (ui.statuses.size && ![...ui.statuses].some((status) => matchesStatus(target, status))) return false;
+    if (ui.due.size && ![...ui.due].some((kind) => matchesDue(target, kind))) return false;
     return true;
   }
 
-  function filterActive() {
-    return !!(ui.query.trim() || ui.labels.size || ui.blockedOnly);
+  function activeFilterCount() {
+    return ui.labels.size + ui.priorities.size + ui.statuses.size + ui.due.size + (ui.query.trim() ? 1 : 0);
+  }
+
+  function clearFilters() {
+    ui.query = '';
+    ui.labels = new Set();
+    ui.priorities = new Set();
+    ui.statuses = new Set();
+    ui.due = new Set();
+  }
+
+  function toggleFilterKey(key) {
+    const [kind, raw] = key.split(':');
+    if (kind === 'label') {
+      if (ui.labels.has(raw)) ui.labels.delete(raw);
+      else ui.labels.add(raw);
+    } else if (kind === 'prio') {
+      const value = Number(raw);
+      if (ui.priorities.has(value)) ui.priorities.delete(value);
+      else ui.priorities.add(value);
+    } else if (kind === 'status') {
+      if (ui.statuses.has(raw)) ui.statuses.delete(raw);
+      else ui.statuses.add(raw);
+    } else if (kind === 'due') {
+      if (ui.due.has(raw)) ui.due.delete(raw);
+      else ui.due.add(raw);
+    }
+    renderFilters();
+    renderBoard();
   }
 
   // ==========================================================================
@@ -765,29 +918,121 @@
   }
 
   function renderFilters() {
-    const used = new Set();
-    for (const target of Object.values(board.cards)) {
-      for (const label of target.labels) used.add(label);
-    }
-    const host = $('label-filters');
-    host.textContent = '';
-    const focusedLabel =
-      document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.label : null;
-    for (const label of [...used].sort()) {
-      const chip = el('button', 'chip', label);
-      chip.type = 'button';
-      chip.dataset.label = label;
-      chip.setAttribute('aria-pressed', ui.labels.has(label) ? 'true' : 'false');
-      chip.title = `Filter by ${label}`;
-      host.appendChild(chip);
-    }
-    $('filter-blocked').setAttribute('aria-pressed', ui.blockedOnly ? 'true' : 'false');
+    const count = activeFilterCount();
+    $('filter-toggle').setAttribute('aria-expanded', ui.filterOpen ? 'true' : 'false');
+    const badge = $('filter-count');
+    badge.textContent = String(count);
+    badge.hidden = count === 0;
+    $('filter-panel').hidden = !ui.filterOpen;
     const queryInput = $('filter-query');
     if (document.activeElement !== queryInput && queryInput.value !== ui.query) {
       queryInput.value = ui.query;
     }
-    if (focusedLabel) {
-      const again = host.querySelector(`button[data-label="${focusedLabel}"]`);
+    if (ui.filterOpen) renderFilterPanel();
+  }
+
+  function filterGroup(name) {
+    const group = el('div', 'filter-group');
+    group.appendChild(el('span', 'filter-group-name', name));
+    group.appendChild(el('div', 'chips'));
+    return group;
+  }
+
+  function filterChip({ key, label, pressed, title, swatchPrio }) {
+    const chip = el('button', 'chip', label);
+    chip.type = 'button';
+    chip.dataset.filterKey = key;
+    chip.setAttribute('aria-pressed', pressed ? 'true' : 'false');
+    if (title) chip.title = title;
+    if (swatchPrio !== undefined) {
+      chip.dataset.prio = String(swatchPrio);
+      chip.insertBefore(el('i', 'prio-swatch'), chip.firstChild);
+    }
+    return chip;
+  }
+
+  function renderFilterPanel() {
+    const host = $('filter-panel');
+    const focusedKey =
+      document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.filterKey : null;
+    host.textContent = '';
+
+    const used = new Set();
+    for (const target of Object.values(board.cards)) {
+      for (const label of target.labels) used.add(label);
+    }
+
+    const labelGroup = filterGroup('LABEL');
+    const labelHost = labelGroup.querySelector('.chips');
+    if (used.size) {
+      for (const label of [...used].sort()) {
+        labelHost.appendChild(
+          filterChip({
+            key: `label:${label}`,
+            label,
+            pressed: ui.labels.has(label),
+            title: `Show only cards labelled ${label}`,
+          })
+        );
+      }
+    } else {
+      labelHost.appendChild(el('span', 'hint', 'NO LABELS ON THIS BOARD YET'));
+    }
+    host.appendChild(labelGroup);
+
+    const prioGroup = filterGroup('PRIORITY');
+    const prioHost = prioGroup.querySelector('.chips');
+    for (const option of PRIORITIES) {
+      prioHost.appendChild(
+        filterChip({
+          key: `prio:${option.value}`,
+          label: option.value === 0 ? 'NONE' : option.label,
+          pressed: ui.priorities.has(option.value),
+          title: option.title,
+          swatchPrio: option.value,
+        })
+      );
+    }
+    host.appendChild(prioGroup);
+
+    const statusGroup = filterGroup('BLOCKED');
+    const statusHost = statusGroup.querySelector('.chips');
+    for (const option of STATUS_FILTERS) {
+      statusHost.appendChild(
+        filterChip({
+          key: `status:${option.id}`,
+          label: option.label,
+          pressed: ui.statuses.has(option.id),
+          title: option.title,
+        })
+      );
+    }
+    host.appendChild(statusGroup);
+
+    const dueGroup = filterGroup('DUE');
+    const dueHost = dueGroup.querySelector('.chips');
+    for (const option of DUE_FILTERS) {
+      dueHost.appendChild(
+        filterChip({
+          key: `due:${option.id}`,
+          label: option.label,
+          pressed: ui.due.has(option.id),
+          title: option.title,
+        })
+      );
+    }
+    host.appendChild(dueGroup);
+
+    const foot = el('div', 'filter-panel-foot');
+    const clear = el('button', 'btn', 'CLEAR ALL');
+    clear.type = 'button';
+    clear.dataset.act = 'clear';
+    clear.disabled = activeFilterCount() === 0;
+    foot.appendChild(clear);
+    host.appendChild(foot);
+
+    if (focusedKey) {
+      const again = host.querySelector(`[data-filter-key="${focusedKey}"]`);
       if (again) again.focus({ preventScroll: true });
     }
   }
@@ -932,7 +1177,7 @@
     wrapper.dataset.cardId = target.id;
     wrapper.draggable = true;
     wrapper.dataset.blocked = blocked ? '1' : '0';
-    if (prio.color) wrapper.style.setProperty('--prio', prio.color);
+    wrapper.dataset.prio = String(target.priority);
 
     const main = el('button', 'card-main');
     main.type = 'button';
@@ -964,14 +1209,14 @@
     }
     if (target.due) {
       const delta = daysUntil(target.due);
-      let cls = 'chip';
+      let cls = 'chip due';
       let text = `DUE ${target.due.slice(5)}`;
       if (!isDone(target.id)) {
         if (delta < 0) {
-          cls = 'chip due-overdue';
+          cls = 'chip due due-overdue';
           text = `OVERDUE ${target.due.slice(5)}`;
         } else if (delta === 0) {
-          cls = 'chip due-today';
+          cls = 'chip due due-today';
           text = 'DUE TODAY';
         }
       }
@@ -980,16 +1225,16 @@
       meta.appendChild(chip);
     }
     if (dependents.length) {
-      const chip = el('span', 'chip', `BLOCKS ${dependents.length}`);
+      const chip = el('span', 'chip blocks', `BLOCKS ${dependents.length}`);
       chip.title = `Blocks: ${dependents.map((d) => d.title).join(', ')}`;
       meta.appendChild(chip);
     }
     if (target.notes.trim()) {
-      const chip = el('span', 'chip', 'NOTE');
+      const chip = el('span', 'chip note', 'NOTE');
       chip.title = target.notes.trim().slice(0, 200);
       meta.appendChild(chip);
     }
-    for (const label of target.labels) meta.appendChild(el('span', 'chip', label));
+    for (const label of target.labels) meta.appendChild(el('span', 'chip label', label));
     main.appendChild(meta);
 
     wrapper.appendChild(main);
@@ -1250,7 +1495,38 @@
       host.appendChild(row);
     });
 
+    renderViewOptions();
     renderStorageInfo();
+  }
+
+  function renderViewOptions() {
+    const densityHost = $('settings-density');
+    densityHost.textContent = '';
+    for (const option of [
+      { value: 'compact', label: 'COMPACT', title: 'Densest spacing — fits the most cards per screen' },
+      { value: 'normal', label: 'NORMAL', title: 'More breathing room between cards and columns' },
+    ]) {
+      const button = el('button', null, option.label);
+      button.type = 'button';
+      button.dataset.density = option.value;
+      button.title = option.title;
+      button.setAttribute('aria-pressed', view.density === option.value ? 'true' : 'false');
+      densityHost.appendChild(button);
+    }
+
+    const host = $('settings-view');
+    host.textContent = '';
+    for (const toggle of VIEW_TOGGLES) {
+      const row = el('label', 'check view-row');
+      row.title = toggle.title;
+      const input = el('input');
+      input.type = 'checkbox';
+      input.checked = !!view[toggle.key];
+      input.dataset.view = toggle.key;
+      row.appendChild(input);
+      row.appendChild(document.createTextNode(toggle.label));
+      host.appendChild(row);
+    }
   }
 
   function renderStorageInfo() {
@@ -1264,6 +1540,7 @@
     const lampState = $('storage-lamp').dataset.state || 'ready';
     $('settings-storage').textContent = [
       `KEY  ${STORAGE_KEY}`,
+      `VIEW  ${VIEW_KEY}`,
       bytes === null ? 'SIZE  UNAVAILABLE' : `SIZE  ${bytes.toLocaleString()} BYTES`,
       `LAST WRITE  ${lastWriteTime || '—'}`,
       `STATUS  ${lampState.toUpperCase()}`,
@@ -1376,9 +1653,8 @@
         board = result.board;
         ui.activeCardId = null;
         ui.inlineAdd = null;
-        ui.labels = new Set();
-        ui.query = '';
-        ui.blockedOnly = false;
+        clearFilters();
+        ui.filterOpen = false;
         if ($('card-dialog').open) $('card-dialog').close();
         if ($('settings-dialog').open) $('settings-dialog').close();
         saveBoard();
@@ -1491,6 +1767,22 @@
     $('settings-add-column').addEventListener('click', addColumn);
     $('settings-name').addEventListener('change', (event) => setBoardName(event.target.value));
 
+    $('settings-density').addEventListener('click', (event) => {
+      const button = event.target.closest('button[data-density]');
+      if (!button) return;
+      view.density = button.dataset.density;
+      applyView();
+      saveView();
+      renderSettings();
+    });
+    $('settings-view').addEventListener('change', (event) => {
+      const input = event.target.closest('input[data-view]');
+      if (!input) return;
+      view[input.dataset.view] = input.checked;
+      applyView();
+      saveView();
+    });
+
     $('settings-columns').addEventListener('click', (event) => {
       const button = event.target.closest('button[data-act]');
       if (!button) return;
@@ -1513,28 +1805,37 @@
     // filters
     $('filter-query').addEventListener('input', (event) => {
       ui.query = event.target.value;
-      renderBoard();
-    });
-    $('filter-blocked').addEventListener('click', () => {
-      ui.blockedOnly = !ui.blockedOnly;
       renderFilters();
       renderBoard();
     });
-    $('filter-clear').addEventListener('click', () => {
-      ui.query = '';
-      ui.labels = new Set();
-      ui.blockedOnly = false;
+    $('filter-toggle').addEventListener('click', () => {
+      ui.filterOpen = !ui.filterOpen;
       renderFilters();
-      renderBoard();
+      if (ui.filterOpen) {
+        const first = $('filter-panel').querySelector('button');
+        if (first) first.focus({ preventScroll: true });
+      } else {
+        $('filter-toggle').focus();
+      }
     });
-    $('label-filters').addEventListener('click', (event) => {
-      const chip = event.target.closest('button[data-label]');
-      if (!chip) return;
-      const label = chip.dataset.label;
-      if (ui.labels.has(label)) ui.labels.delete(label);
-      else ui.labels.add(label);
+    $('filter-panel').addEventListener('click', (event) => {
+      const chip = event.target.closest('[data-filter-key]');
+      if (chip) {
+        toggleFilterKey(chip.dataset.filterKey);
+        return;
+      }
+      if (event.target.closest('[data-act="clear"]')) {
+        clearFilters();
+        renderFilters();
+        renderBoard();
+      }
+    });
+    $('filter-panel').addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      ui.filterOpen = false;
       renderFilters();
-      renderBoard();
+      $('filter-toggle').focus();
     });
 
     // board — add card, open card, chain highlight
@@ -1758,6 +2059,13 @@
   function boot() {
     bind();
     const stored = readStored();
+    const storedView = loadView();
+    view = storedView.view;
+    applyView();
+    if (storedView.problem) {
+      saveView();
+      toast('warn', `VIEW OPTIONS RESET TO DEFAULTS — ${storedView.problem}`, 12000);
+    }
 
     if (stored.kind === 'ok') {
       board = stored.board;

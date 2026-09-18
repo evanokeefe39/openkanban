@@ -23,6 +23,13 @@
   --color-accent: #f59e0b;
   --ivory: #f9ffd0;
 
+  /* priority + due accents — pink / burnt orange / cream from the reference design system,
+     plus the cyan (eq band 6) reserved for "due today" so it never reads as alarm red */
+  --color-priority-p0: #f00e68;
+  --color-priority-p1: #f14f2b;
+  --color-priority-p2: #f9ffd0;
+  --color-due-today: #14b8a6;
+
   /* derived structure */
   --line: rgba(255, 255, 255, 0.1);
   --line-strong: rgba(255, 255, 255, 0.16);
@@ -35,7 +42,7 @@
 
   /* spacing base unit: 4px */
   --unit: 4px;
-  --col-width: 268px;
+  --col-width: var(--density-col-width);
 
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 }
@@ -101,6 +108,95 @@ body {
   clip: rect(0 0 0 0);
   white-space: nowrap;
   border: 0;
+}
+
+/* ============================================================
+   View options — density scale + card-face visibility.
+   Presentation only: gating and ordering are unaffected.
+   ============================================================ */
+:root {
+  --density-card-pad: 9px 10px 8px;
+  --density-card-gap: 8px;
+  --density-body-pad: 8px;
+  --density-title: 12px;
+  --density-col-width: 268px;
+  --density-head-pad: 7px 8px;
+  --density-meta-gap: 4px;
+  --density-meta-top: 6px;
+}
+html[data-density='normal'] {
+  --density-card-pad: 13px 14px 12px;
+  --density-card-gap: 12px;
+  --density-body-pad: 12px;
+  --density-title: 13px;
+  --density-col-width: 300px;
+  --density-head-pad: 9px 10px;
+  --density-meta-gap: 6px;
+  --density-meta-top: 8px;
+}
+
+html[data-show-priority='0'] .card::before,
+html[data-show-priority='0'] .chip.prio {
+  display: none;
+}
+html[data-show-labels='0'] .chip.label {
+  display: none;
+}
+html[data-show-due='0'] .chip.due,
+html[data-show-due='0'] .chip.due-today,
+html[data-show-due='0'] .chip.due-overdue {
+  display: none;
+}
+html[data-show-status='0'] .chip.blocked,
+html[data-show-status='0'] .chip.override,
+html[data-show-status='0'] .chip.blocks {
+  display: none;
+}
+
+/* Highlight fills are graded by chroma, not by a single mix ratio: the palette runs
+   pink -> orange -> cream, and equal mixes collapse P0 and P1 into the same dark maroon
+   (measured 5-9 RGB apart). P0 therefore takes the strongest wash so urgency still reads in
+   the fill, P1 stays a whisper, and P2 — near-desaturated cream — needs the heavier mix to
+   register at all. Cream is the binding constraint: past 38% its fill drops below AA for
+   the card text. Measured at these values: P0 rgb(100,37,66) contrast 9.1, P1 rgb(66,39,49)
+   contrast 11, P2 rgb(90,93,95) contrast 5.4, against a base of rgb(23,23,42); pairwise
+   gaps 38/75/64. */
+html[data-highlight-priority='1'] .card[data-prio='1'] {
+  background: color-mix(in oklab, var(--color-priority-p0) 38%, var(--card-bg));
+  border-color: color-mix(in oklab, var(--color-priority-p0) 48%, var(--line));
+}
+html[data-highlight-priority='1'] .card[data-prio='2'] {
+  background: color-mix(in oklab, var(--color-priority-p1) 22%, var(--card-bg));
+  border-color: color-mix(in oklab, var(--color-priority-p1) 48%, var(--line));
+}
+html[data-highlight-priority='1'] .card[data-prio='3'] {
+  background: color-mix(in oklab, var(--color-priority-p2) 34%, var(--card-bg));
+  border-color: color-mix(in oklab, var(--color-priority-p2) 34%, var(--line));
+}
+
+.view-rows {
+  border: 1px solid var(--line);
+  margin-top: 10px;
+}
+.view-rows:empty {
+  display: none;
+}
+.view-row {
+  display: flex;
+  padding: 6px;
+  border-bottom: 1px solid var(--line);
+  background: var(--inset-bg);
+}
+.view-row:last-child {
+  border-bottom: 0;
+}
+.sub-label {
+  display: block;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-foreground-muted);
+  margin-bottom: 4px;
 }
 
 /* ============================================================
@@ -246,10 +342,14 @@ body {
 
 .filters {
   display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--line);
+}
+.filter-strip {
+  display: flex;
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
-  border-bottom: 1px solid var(--line);
   overflow-x: auto;
   overflow-y: hidden;
 }
@@ -259,13 +359,72 @@ body {
 .search input {
   width: 260px;
 }
-.label-filters {
-  display: flex;
-  gap: 4px;
-  flex: 0 0 auto;
-}
 .filter-spacer {
   flex: 1 1 auto;
+}
+
+/* filter disclosure — the strip stays one line; categories live behind the chevron */
+.filter-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.filter-toggle .chev {
+  width: 8px;
+  height: 5px;
+  transition: transform 140ms var(--ease-out);
+}
+.filter-toggle[aria-expanded='true'] {
+  background: var(--color-surface-elevated);
+  color: var(--color-foreground);
+  border-color: var(--line-strong);
+}
+.filter-toggle[aria-expanded='true'] .chev {
+  transform: rotate(180deg);
+}
+.filter-count {
+  font-variant-numeric: tabular-nums;
+  background: var(--ivory);
+  color: #000;
+  padding: 0 4px;
+}
+.filter-count[hidden] {
+  display: none;
+}
+
+.filter-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--line);
+  background: var(--color-background-subtle);
+}
+.filter-panel[hidden] {
+  display: none;
+}
+.filter-group {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.filter-group-name {
+  flex: 0 0 74px;
+  padding-top: 3px;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-foreground-muted);
+}
+.filter-group .chips {
+  flex: 1 1 auto;
+}
+.filter-panel-foot {
+  display: flex;
+  justify-content: flex-end;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
 }
 
 /* priority legend — documents the rail on the top edge of each card */
@@ -291,24 +450,24 @@ body {
   align-items: center;
   gap: 4px;
 }
-.prio-key i {
+/* one definition of the priority palette, shared by the card rail, the legend and the filters */
+.prio-swatch {
   display: block;
   width: 12px;
   height: 3px;
-  background: var(--color-foreground-muted);
-}
-.prio-key[data-prio='1'] i {
-  background: #ef4444;
-}
-.prio-key[data-prio='2'] i {
-  background: #f59e0b;
-}
-.prio-key[data-prio='3'] i {
-  background: #6b7280;
-}
-/* NONE draws no rail at all on a card, so the key is hollow rather than grey */
-.prio-key[data-prio='0'] i {
   background: transparent;
+}
+[data-prio='1'] .prio-swatch {
+  background: var(--color-priority-p0);
+}
+[data-prio='2'] .prio-swatch {
+  background: var(--color-priority-p1);
+}
+[data-prio='3'] .prio-swatch {
+  background: var(--color-priority-p2);
+}
+/* NONE draws no rail on a card, so its key is hollow rather than a grey bar */
+[data-prio='0'] .prio-swatch {
   border: 1px dashed var(--color-foreground-muted);
 }
 
@@ -424,8 +583,8 @@ button.chip[aria-pressed='true']:hover {
   border-color: rgba(239, 68, 68, 0.5);
 }
 .chip.due-today {
-  color: var(--color-vu-yellow);
-  border-color: rgba(234, 179, 8, 0.45);
+  color: var(--color-due-today);
+  border-color: rgba(20, 184, 166, 0.5);
 }
 .chip.prio {
   color: var(--color-foreground);
@@ -461,7 +620,7 @@ button.chip[aria-pressed='true']:hover {
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 7px 8px;
+  padding: var(--density-head-pad);
   background: var(--color-surface);
   border-bottom: 1px solid var(--line);
 }
@@ -524,10 +683,10 @@ button.chip[aria-pressed='true']:hover {
   flex: 1 1 auto;
   min-height: 48px;
   overflow-y: auto;
-  padding: 8px;
+  padding: var(--density-body-pad);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--density-card-gap);
   transition: background-color 120ms var(--ease-out);
 }
 .col-body.drag-over {
@@ -571,7 +730,16 @@ button.chip[aria-pressed='true']:hover {
   position: absolute;
   inset: 0 0 auto 0;
   height: 2px;
-  background: var(--prio, transparent);
+  background: var(--prio-color, transparent);
+}
+.card[data-prio='1'] {
+  --prio-color: var(--color-priority-p0);
+}
+.card[data-prio='2'] {
+  --prio-color: var(--color-priority-p1);
+}
+.card[data-prio='3'] {
+  --prio-color: var(--color-priority-p2);
 }
 .card:hover {
   background: var(--card-bg-hover);
@@ -582,11 +750,11 @@ button.chip[aria-pressed='true']:hover {
   width: 100%;
   text-align: left;
   font-family: inherit;
-  font-size: 12px;
+  font-size: var(--density-title);
   color: inherit;
   background: transparent;
   border: 0;
-  padding: 9px 10px 8px;
+  padding: var(--density-card-pad);
   cursor: grab;
 }
 .card-main:active {
@@ -607,8 +775,8 @@ button.chip[aria-pressed='true']:hover {
 .card-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 6px;
+  gap: var(--density-meta-gap);
+  margin-top: var(--density-meta-top);
 }
 .card-meta:empty {
   display: none;

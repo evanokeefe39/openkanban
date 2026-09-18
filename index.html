@@ -34,30 +34,46 @@
       </header>
 
       <section class="filters" aria-label="Filters">
-        <label class="search">
-          <span class="visually-hidden">Search cards</span>
-          <input
-            class="input"
-            type="search"
-            id="filter-query"
-            placeholder="SEARCH TITLE / NOTES / LABEL"
-            autocomplete="off"
-            spellcheck="false"
-          />
-        </label>
-        <div class="label-filters" id="label-filters"></div>
-        <button class="btn toggle" id="filter-blocked" type="button" aria-pressed="false">
-          BLOCKED ONLY
-        </button>
-        <button class="btn" id="filter-clear" type="button">CLEAR</button>
-        <span class="filter-spacer"></span>
-        <span class="prio-legend" id="prio-legend" title="Card priority — the bar on the top edge of a card">
-          <span class="prio-legend-label">PRIORITY</span>
-          <span class="prio-key" data-prio="1"><i></i>P0</span>
-          <span class="prio-key" data-prio="2"><i></i>P1</span>
-          <span class="prio-key" data-prio="3"><i></i>P2</span>
-          <span class="prio-key" data-prio="0"><i></i>NONE</span>
-        </span>
+        <div class="filter-strip">
+          <label class="search">
+            <span class="visually-hidden">Search cards</span>
+            <input
+              class="input"
+              type="search"
+              id="filter-query"
+              placeholder="SEARCH TITLE / NOTES / LABEL"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </label>
+          <button
+            class="btn filter-toggle"
+            id="filter-toggle"
+            type="button"
+            aria-expanded="false"
+            aria-controls="filter-panel"
+            title="Show filter categories"
+          >
+            FILTERS
+            <span class="filter-count" id="filter-count" hidden>0</span>
+            <svg class="chev" viewBox="0 0 10 6" aria-hidden="true">
+              <path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" />
+            </svg>
+          </button>
+          <span class="filter-spacer"></span>
+          <span
+            class="prio-legend"
+            id="prio-legend"
+            title="Card priority — the bar on the top edge of a card"
+          >
+            <span class="prio-legend-label">PRIORITY</span>
+            <span class="prio-key" data-prio="1"><i class="prio-swatch"></i>P0</span>
+            <span class="prio-key" data-prio="2"><i class="prio-swatch"></i>P1</span>
+            <span class="prio-key" data-prio="3"><i class="prio-swatch"></i>P2</span>
+            <span class="prio-key" data-prio="0"><i class="prio-swatch"></i>NONE</span>
+          </span>
+        </div>
+        <div class="filter-panel" id="filter-panel" hidden></div>
       </section>
 
       <main class="board" id="board" aria-label="Kanban board"></main>
@@ -152,6 +168,17 @@
             complete when resolving blockers.
           </p>
         </div>
+        <div class="field">
+          <span class="field-label">VIEW OPTIONS</span>
+          <span class="sub-label">DENSITY</span>
+          <div class="seg" id="settings-density" role="group" aria-label="Card density"></div>
+          <div class="view-rows" id="settings-view"></div>
+          <p class="hint">
+            Display only — hiding blocker badges does not disable gating, and these preferences are
+            stored per browser, not with the board.
+          </p>
+        </div>
+
         <div class="field">
           <span class="field-label">STORAGE</span>
           <p class="hint" id="settings-storage"></p>

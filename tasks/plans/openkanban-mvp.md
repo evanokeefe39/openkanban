@@ -56,6 +56,18 @@ labels all shipped, plus the dependency graph that no option mentioned.
   single primary action in a dialog.
 - **Type**: JetBrains Mono only, tabular numerals on every counter. Caption 10 / body 12 / sub 13 /
   title 15. Weight and colour carry hierarchy, not size.
+- **Priority palette** (user-directed, from the design system): P0 pink `#f00e68`, P1 burnt orange
+  `#f14f2b`, P2 cream `#f9ffd0`, and the palette cyan `#14b8a6` for DUE TODAY so a deadline never
+  reads as alarm red. The rail, the legend key and the filter-chip swatch all resolve from the same
+  custom property, so a priority has exactly one colour in the system.
+- **Highlight fills are graded by chroma, and the grade is measured, not guessed.** The three
+  palette colours run pink → orange → cream, so an equal mix ratio collapses P0 and P1 into the
+  same dark maroon (measured 5–9 RGB apart — indistinguishable at a glance). The fills therefore
+  step: P0 38%, P1 22%, P2 34% of the source colour into the card surface, giving
+  rgb(100,37,66) / rgb(66,39,49) / rgb(90,93,95) and pairwise gaps of 38/75/64. Cream is the
+  binding constraint — past 38% its fill drops below AA for card text, so the option stops there
+  (measured text contrast 9.1 / 11 / 5.4). Priority urgency still reads in the fill because chroma,
+  not lightness, carries the order.
 - **Depth**: borders-only, declared once. Hairlines at `rgba(255,255,255,.06–.14)`; no box-shadows
   except inset rings used as borders for chain highlighting.
 
@@ -221,13 +233,21 @@ the header lamp reports storage write truth.
 | Browser verification | done | 7 pass/fail runs + 3 measurement passes, no console errors, no failed requests |
 | No new dependencies | done | Google Fonts is a CDN link; zero npm packages |
 
-Verification tally, stated exactly: 163 pass/fail assertions across 7 runs (75 interaction, 17
+Verification tally, stated exactly: 270 assertions across 14 runs (75 interaction, 17
 round-trip/recovery, 14 native-drag gate, 12 blocked-state recompute, 24 header/rename robustness,
-7 real-click gate, 14 colour-swatch removal). Eleven failed on first pass, and every one traced to
-the test rather than the app — guessed counts, an assertion truncated before the string it looked
-for, `display: inline-flex` blockifying to `flex` for a flex item, and three fixtures where the
-"blocked" card's blocker sat in a DONE column so the card was legitimately unblocked. Each was
-re-run in corrected form and passed. Three further passes yielded measurements rather than
+7 real-click gate, 14 colour-swatch removal, 30 palette + filter pane, 20 view options, 5 rail and
+tint geometry, 22 consolidated regression, 5 keyboard/scoping, and the earlier runs above).
+Nineteen failed on first pass and every one was traced to the test rather than the app — guessed
+counts and sets, an assertion truncated before the string it looked for, asserting a computed colour
+that `display:none` does not change, a "baseline" card that already carried the style under test,
+reading a colour through the `background` shorthand (which canvas cannot parse, so it silently
+yields black), querying the filter pane's groups before the pane is open, holding a chip node across
+the re-render that replaces it, expecting the due-today chip to have a transparent surface when the
+design gives every chip its own fill, dispatching a synthetic `Escape` on `document` when the
+handler is scoped to the pane, `display: inline-flex` blockifying to `flex` for a flex item, and
+three fixtures where the "blocked" card's blocker sat in a DONE column so the card was legitimately
+unblocked. Each was re-run in corrected form and passed. Every fixture-corrected re-run also derived its
+expected set from the store rather than from a hand-written literal. Three further passes yielded measurements rather than
 pass/fail series: computed contrast ratios, per-label filter exactness against the store, and
 layout geometry at 375px and 1440px.
 
@@ -264,6 +284,27 @@ can actually hit — is test-verified end to end.
    the whole page scrolled sideways. The app grid is now `minmax(0, 1fr)` with the header and
    filter strips scrolling internally: measured zero page-level horizontal scroll at 375px and
    1440px, with the columns still 268px and no card overflow at either width.
+8. **Orphaned CSS during the colour-swatch removal** — deleting the label palette took the
+   `.col-hidden` rule with it while the `+N HIDDEN` counter still used it, and the new header
+   button was added before its own rule existed. Caught in review; the fix was to restore
+   `.col-hidden`, add `.col-add` and `.plate-action`, and delete the footer rules the change had
+   obsoleted. The lesson is specific: a class string in `app.js` and a rule in `styles.css` are a
+   contract with no compiler behind it, so removals need a grep for every consumer first.
+9. **A clobbered handler during the view-options work** — an edit intended to add two bindings
+   deleted the `const button = …` declaration from the adjacent column-settings click handler,
+   leaving a `ReferenceError` on every reorder and delete click. `node --check` cannot see this;
+   only pressing the buttons does. The repair is covered by a browser test that presses them
+   (reorder down, reorder up, delete-and-cancel) rather than by reading the diff back.
+10. **Priority highlight fills were too close to tell apart** — the first cut mixed all three
+   priorities at one ratio, which made P0 and P1 land 5–9 RGB apart. Found by asking a vision model
+   to sort the board's cards by fill colour; it could not. Fixed by grading the mix by chroma
+   (38/22/34%) and re-measured on the live DOM, not on a CSS probe.
+
+Two findings that were checked and are **not** defects, recorded so they are not "fixed" later:
+the CLEAR ALL button in the filter pane reads as very dim until a filter is active — it is disabled
+there, which is correct; and at NORMAL density the five columns are 1548px wide, so the last column
+extends past a 1440px viewport — the board scrolls horizontally by design (measured page-level
+horizontal scroll: 0), which is the standard kanban affordance, and at COMPACT density all five fit.
 
 Claims that did not survive checking: a visual audit asserted the columns had different widths and
 that DONE was narrower; measurement shows five × 268px and zero card/chip overflow. The same audit's
@@ -302,6 +343,18 @@ that DONE was narrower; measurement shows five × 268px and zero card/chip overf
 11. **Add-card moved into the column header** (user-directed). A 22px `+` with a 38px hit area and
     the hit count immediately to its left, opening the composer at the top of the list; empty
     columns keep a plate-sized add action so a fresh board is not five dead frames.
+12. **Filter categories live behind a chevron** rather than as a permanent row (user-directed).
+    LABEL / PRIORITY / BLOCKED / DUE, each a set of chips; chips within a category OR, categories
+    AND. The count badge on the chevron exists because a collapsed pane would otherwise hide the
+    fact that filters are applied — the one thing a disclosure must not do.
+13. **Priority palette taken from the design system** (user-directed): pink `#f00e68` for P0,
+    burnt orange `#f14f2b` for P1, cream `#f9ffd0` for P2, and the palette's cyan `#14b8a6`
+    (eq band 6) for DUE TODAY so it never reads as alarm red. The rail is now CSS-driven from
+    `data-prio` instead of an inline style, so rail, legend and filter chips share one definition.
+14. **View options are a per-browser preference**, stored under their own key rather than in the
+    board document, so importing someone else's board does not rewrite how you look at it. Density
+    flows through `--density-*` tokens rather than duplicated rules. Hiding blocker badges is
+    explicitly display-only, and the pane says so — the gate still refuses and warns regardless.
 
 ## Reasoning trace
 
