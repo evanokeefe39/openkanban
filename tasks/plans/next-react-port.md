@@ -34,9 +34,12 @@ emits absolute asset paths (`/_next/static/...`), which resolve against the file
 `file://` and fail. There is no supported configuration that makes a Next build reliably
 double-clickable.
 
-Mitigation is a one-line instruction rather than a fix: `npx serve out`, or any static host. To be
-confirmed empirically during Phase 4 (`assetPrefix` and `trailingSlash` are worth one experiment
-before accepting it) — but plan on losing it, and update the README's headline claim when we do.
+Mitigation is a one-line instruction rather than a fix: `npx serve out`, or any static host. **Confirmed
+empirically on 2026-09-18, during Phase 0 rather than at cutover** (`assetPrefix`/`trailingSlash` are
+not a rescue — Next's export still emits absolute `/_next/...` paths, which resolve against the
+filesystem root under `file://`). The loss is asserted by the cross-app checks
+`cross-05`/`cross-06` in `tests/behaviour/crossapp.mjs`: the vanilla app boots from `file://` and the
+export does not. The README's headline claim changes at Phase 6, when the export becomes the app.
 
 Everything else the app does today survives.
 
@@ -194,6 +197,27 @@ diff of what changed is only readable while both exist.
 
 **Exit:** both apps boot locally; nothing has changed about the vanilla one.
 
+### Phase 0.5 — The behaviour suite, built against the vanilla app
+
+Added 2026-09-18. This phase did not exist in the first draft, and it is the one that makes the port
+verifiable rather than reviewed. Full detail in
+[`react-port-validation.md`](react-port-validation.md).
+
+The inversion: a suite written *after* the rewrite asserts whatever the rewrite happens to do. Written
+*before* it, against the app that already works, it is an acceptance gate — a check green on vanilla
+and red on React names the regression exactly.
+
+- [x] The feature inventory — every behaviour the port must preserve, as an id (`A1`…`I12`, `J1`…`J5`)
+- [x] A dual-target runner: one set of checks, run against the vanilla app and the static export
+- [x] `tests/behaviour/dom.mjs` — the DOM/state contract both apps are addressed through, in one file
+- [x] The coverage ledger, enforced: an uncovered feature fails the run, and so does a pre-port
+      `smoke.mjs` check with no live successor
+- [x] Capability asymmetry declared rather than hidden (the drag gesture is React-only; `file://` is
+      vanilla-only)
+- [x] CI: the vanilla target gates, the React target reports
+
+**Exit:** `npm run behaviour` green against the vanilla app with the ledger complete. **Met.**
+
 ### Phase 1 — Port the pure model, with unit tests
 
 The highest-value phase and the one that de-risks the rest, because none of it touches React.
@@ -244,15 +268,26 @@ graph functions (`columnOf`, `isDone`, `unfinishedBlockers`, `isBlocked`, `depen
 
 **Exit:** a real pointer drag moves a card and is asserted in CI.
 
-### Phase 5 — Tests
+### Phase 5 — Turning the suite green, and retiring the old gate
 
-- [ ] The Playwright suite ported check by check against the new DOM — **every existing check carried
-      over or explicitly replaced**, none dropped for convenience
+The suite already exists (Phase 0.5). This phase is about the React target satisfying it, not about
+writing tests.
+
+- [ ] `npm run behaviour:react` green: every check green on vanilla is green on React
+- [ ] The five capability-deferred drag checks (`D1`, `D3`, `D6`, `D7`, `D8`) execute for the first
+      time and pass — Phase 4's exit, and the suite's only previously unverified area
+- [ ] The cross-app checks (`J1`, `J2`, `J4`) green: both directions of the storage round-trip, and one
+      state contract in both apps
+- [ ] The visual comparison (`J3`) within tolerance, with the tolerance frozen — not widened
+- [ ] `npm run compare` reports zero regressions
+- [ ] `tests/smoke.mjs` retired: the ledger proves every one of its 31 checks has a live successor
 - [ ] Vitest covers `lib/` and the store actions
 - [ ] `tests/check-styles.mjs`'s job replaced: an unknown theme token must fail the build
-- [ ] CI updated to run lint, typecheck, unit tests and E2E
+- [ ] `lint` restored (deferred in Phase 0 because `typescript-eslint` refuses TypeScript 7), and CI
+      runs lint, typecheck, unit tests and E2E
 
-**Exit:** the suite proves the same behavioural contracts it did before the port.
+**Exit:** the suite proves the same behavioural contracts it did before the port, on both targets, and
+the React target is the one that gates.
 
 ### Phase 6 — Cutover
 

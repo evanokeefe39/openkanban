@@ -1,6 +1,11 @@
-# dependencies are for the test harness only — the app itself has none
+# dependencies
 node_modules/
 tests/.artifacts/
+
+# next
+.next/
+out/
+next-env.d.ts
 
 # editors and OS
 .vscode/

@@ -143,14 +143,76 @@ COMPACT density all five fit.
 **The toolbar is ~13px off true centre.** The button cluster is wider than the brand cluster; centring
 is of the search field, which is what was asked for.
 
+## Open — found while building the port's behaviour suite
+
+**A drawer control's click is silently lost when a text edit is pending.** Found 2026-09-18, reproduced
+with a trusted browser click, and deliberately **not** fixed: `app.js` is frozen as the port's
+reference, so a change to it during the port would invalidate the comparison.
+
+Type into a card's `TITLE` and then click a `PRIORITY` button without clicking elsewhere first: the
+priority does not change, and nothing reports the failure. The title's `change` fires on mousedown
+(blur), which commits and re-renders, and `fillCardDialog()` rebuilds the priority buttons — so the
+button the mousedown landed on is detached before the mouseup, Chromium composes no click at all, and
+the user's click is gone. Measured directly:
+
+| Ordering | Result |
+| --- | --- |
+| `fill(TITLE)` then click P2 | priority stays `2` — the click is eaten |
+| click P2 with no pending edit | priority becomes `3` |
+| blur first (click elsewhere), then click P2 | priority becomes `3` |
+
+A user who types a title and then reaches for a priority button has to click twice. The fix belongs in
+the drawer's controls — handle `pointerdown`, or defer the post-commit re-render by a frame so the
+in-flight click can compose — and it is recorded here rather than fixed so the port does not inherit it
+silently. **The behaviour suite asserts this neither way**: a check pinning the current behaviour would
+enshrine the defect, and one asserting the correct behaviour would leave the vanilla gate permanently
+red for a bug this port is not the right place to fix.
+
+**A page-level horizontal scroll appears at a 375px viewport.** Found 2026-09-18 by two independent
+measurements while building the behaviour suite, and not fixed for the same reason — `styles.css` is
+frozen as the port's reference.
+
+At 375px the document's `scrollWidth` is 464 against a 375 viewport, and it genuinely scrolls:
+`window.scrollTo(400, 0)` leaves `scrollX` at 89. The cause is `.visually-hidden` inside the toolbar's
+search label (`styles.css:123`): it is `position: absolute` with no positioned ancestor, so it does not
+stay inside the toolbar strip that scrolls it off-screen — its 1px box lands at x≈463 and extends the
+document, escaping the strip's own `overflow-x: auto` clip. The strip itself is meant to scroll
+internally; `p.counters` and `label.search` extend past the viewport inside it and are correctly
+clipped. Only that one absolutely-positioned span leaks.
+
+The documented invariant is "page-level horizontal scroll is 0", and it holds at 1440. The fix is one
+line — `position: relative` on the search label, or a `clip-path`-only `.visually-hidden` — and it
+belongs in the port's Phase 3 with the token work. Carried as `i-design-08` in the behaviour suite's
+declared-defect register, so the vanilla gate stays green while the defect is tracked rather than
+quietly accepted.
+
+**Three 10px labels sit below the 4.5:1 the project applies everywhere else.** Found 2026-09-18 by
+computing the ratio against the composited background, not by looking — which is how every contrast
+defect in this repo has been found.
+
+| Element | Ratio | Colour | On |
+| --- | --- | --- | --- |
+| `.col-hidden` — the `+N HIDDEN` badge | 4.17 | `#6b7280` (`--color-foreground-muted`) | page `#0a0608` |
+| `.drawer-kicker` | 4.04 | `#6b7280` | drawer header `--color-background-subtle` |
+| `.field-label` — the drawer's field labels | 4.17 | `#6b7280` | page `#0a0608` |
+
+`openkanban-mvp.md` records a sweep that moved *+ ADD CARD*, the counters, the filter group names, the
+ticket number and the storage lamp from `muted` to `secondary` for exactly this reason — 9-10px text on
+a dark fill — and it did not reach these three. Not a judgement call: the same kind of label, the same
+fill, the same rule. The fix is the same one the sweep applied, moving these three to
+`--color-foreground-secondary` (`#9ca3af`, 7.93:1). Carried as `i-colour-05` in the declared-defect
+register.
+
 ## Known limitations
 
 Real, accepted, and worth knowing before someone reports them as new.
 
-- **The smoke suite does not cover drag and drop end to end.** Playwright's synthetic mouse drag fires
-  `dragstart` and `dragover` but never `drop`, so the suite verifies the selection model, the bulk bar
-  and the gate, while the actual drag-and-drop gesture is verified by hand. A browser-level test would
-  need a real input event injection.
+- **Drag and drop is written but not yet executed.** Playwright's synthetic mouse drag fires `dragstart`
+  and `dragover` but never `drop`, so the behaviour suite's five drag checks (D1, D3, D6, D7, D8) are
+  declared `pointer-drag`-bound and reported as **deferred** on the vanilla app rather than as coverage;
+  they are the point of the React target in Phase 4, where a real input-injected drag is the first thing
+  that executes them. Until then the gesture is verified by hand, and "drag ordering is covered" is not
+  a claim this repo can make.
 - **Reset does not clear filters; import does.** Deliberate and asymmetric: an import replaces the
   board with a different one, where a stale filter would hide everything; a reset leaves a visible
   search box and visible chips, so silently changing the view would be a second, unasked-for action.

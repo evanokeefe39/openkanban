@@ -1,0 +1,14 @@
+@import "tailwindcss";
+
+/*
+ * Phase 0 holds this file empty of design tokens on purpose.
+ *
+ * Phase 3 moves every `:root` token from `styles.css` into Tailwind's `@theme`
+ * block here, one for one and verbatim — never retyped as a hex inside a utility
+ * class. Until then the vanilla `styles.css` remains the single source of the
+ * design language, and the vanilla app remains the reference implementation.
+ *
+ * The semantic class names the vanilla DOM carries (`.card`, `.col-head`,
+ * `.chip`, `[data-chain]`, …) are part of the shared contract the behaviour
+ * suite addresses both apps through; see `tests/behaviour/dom.mjs`.
+ */

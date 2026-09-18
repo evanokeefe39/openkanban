@@ -103,6 +103,45 @@ Two mechanical traps when you do instrument the page:
 - **Contrast measured.** 4.5:1 text, 3:1 graphics. A colour change obliges you to re-measure
   everything the colour touches — including text on a surface whose luminance moved.
 
+## The React port (in progress, `feat/next-react-port`)
+
+The port has its own rules, and they are enforced by `npm run behaviour` rather than by review. What a
+reviewer should be suspicious of:
+
+- **A diff that touches `index.html`, `styles.css` or `app.js`.** They are the frozen reference while
+  the port is in flight; a change to them invalidates the comparison the whole suite is built on. The
+  one deliberate exception would be an additive `data-testid`, and there are none today.
+- **A check green on the vanilla app and red on React.** That is the port's definition of a
+  regression, and `npm run compare` names it. It is not a to-do list item — the port's job is to make
+  it green, or to say why the behaviour is deliberately different.
+- **A capability gap asserted as a pass.** The drag gesture can only be driven on the React target
+  (Playwright cannot synthesise an HTML5 `drop`) and `file://` only works on the vanilla one. A
+  `skipped` check is not coverage, and the ledger prints deferred features rather than counting them.
+- **`lib/` importing React, or storage read during render.** The pure model must stay framework-free,
+  and `localStorage` does not exist during the prerender: reading it in render either fails the build
+  or produces markup that disagrees with the client's. That is the highest-probability way this port
+  breaks.
+- **A Tailwind utility replacing a class the suite addresses.** The semantic classes (`.card`,
+  `.card-refs`, `.card-tick`, `.chip`, `.plate-action`) are the design language, not incidental
+  markup — the candy cane *is* `.card[data-chain='blocks']::after`. `tests/behaviour/dom.mjs` is the
+  contract; Tailwind carries the `@theme` tokens.
+- **A re-render between mousedown and mouseup.** See the open defect in `ISSUES.md`: a pending field
+  edit commits on blur and rebuilds the drawer's controls, so the click that caused the blur is eaten.
+  A React controlled form reproduces this race very easily, and it will not be caught by any check
+  until someone writes one.
+- **Two defects are carried, not accepted.** `tests/behaviour/inventory.mjs` declares
+  `KNOWN_DEFECTS`, keyed by check id: `i-design-08` (a 375px page-level horizontal scroll) and
+  `i-colour-05` (three muted 10px labels at 4.04–4.17:1). Each of those checks asserts the *correct*
+  behaviour and is red; the register only stops them failing the gate. Fixing either in the port means
+  deleting its entry, and the check goes green on its own. A port that "fixes" one by loosening its
+  assertion, or by adding a third id to the register without a measured defect behind it, has inverted
+  the mechanism.
+- **The design invariants are checks now, not review judgement.** `i-design.mjs` (surfaces, hover lift,
+  radius, focus, density, viewport, hotkey guards, reduced motion) and `i-colour.mjs` (the blue ban,
+  measured contrast, the tint-versus-cane border, imported text) own them. Read those two modules
+  before re-eyeballing a palette: every number is computed from the rendered page and printed in the
+  check's detail, so a disagreement is an argument about the measurement, not about taste.
+
 ## False positives — do not report these
 
 Each has been raised at least once and each is correct. Checking them again costs review time.
@@ -112,13 +151,37 @@ Each has been raised at least once and each is correct. Checking them again cost
 - **`7 BLOCKED · 4 OVERRIDE` on a fresh board.** The sample deliberately spreads cards across all five
   columns so the demo shows every state; the overrides are the gate honouring its rule.
 - **CLEAR ALL in the filter pane looks disabled** until a filter is active. It is disabled.
+- **Clicking a settings view toggle does NOT close the settings drawer.** Reported twice on
+  2026-09-18 while building the behaviour suite, and disproved by direct measurement both times: with
+  a trusted click and with `uncheck`, `#settings-dialog` stays open and the preference reaches
+  `openkanban.view.v1`. What produced the report was a programmatic `element.click()`, which carries no
+  pointer coordinates — the drawer's backdrop handler compares the click point against the dialog's
+  box, reads `(0, 0)` as outside, and closes it. That is the handler working correctly; drive the
+  drawer with real clicks.
 - **The fifth column extends past 1440px at NORMAL density.** The board scrolls horizontally by
   design; page-level horizontal scroll is 0.
 - **The toolbar is ~13px off true centre.** The search field is centred, not the row.
 - **Reset keeps the filters while import clears them.** Deliberate and documented in `ISSUES.md`.
-- **The smoke suite does not test the drag gesture end to end.** Playwright's synthetic mouse fires
-  `dragstart` and `dragover` but never `drop`. The suite tests the selection model and the gate; the
-  gesture itself is verified by hand.
+- **The drag gesture has no check that has ever executed.** Playwright's synthetic mouse fires
+  `dragstart` and `dragover` but never `drop`, so `tests/smoke.mjs` cannot test it, and the behaviour
+  suite's five gesture checks (`D1`, `D3`, `D6`, `D7`, `D8`) are written against the DOM contract but
+  report `deferred` on the vanilla target and have not run — the React target does not exist yet. They
+  are the suite's one unverified area, and describing them as covering anything is exactly the claim
+  this repo's own rules forbid. Phase 4 executes them for the first time.
+- **A computed colour read two frames after a state change is a sample mid-transition.** `.card`
+  transitions `border-color` over 120ms, so an `i-colour` reading taken with the usual `waitFrames()`
+  returned `oklab(0.997 -0.004 0.010 / 0.122)` where the resting value is `rgba(255,255,255,0.1)` —
+  which reads as a CSS rule failing when it is a curve in flight. Poll until the value stops moving
+  rather than guessing a duration. Where this bites again: anything transitioning background, border
+  or colour (`.btn`, `.card`, `#filter-toggle`, the toasts).
+- **A `color-mix()` resolves to an `oklab(...)` string, so comparing computed colours as text fails.**
+  Two values that are the same colour compare unequal, and a "the tone is unchanged" check reds on a
+  colour that never moved. Parse and compare per channel (`i-colour.mjs` has `sameColour`) instead of
+  comparing the strings.
+- **The drawer's surface is the page colour on purpose.** `.drawer { background: var(--color-background) }`
+  — "the sidebar is the page's own material, per the user's call… modals keep the ink surface". So a
+  drawer that is not on ink is not a violation of the floating-chrome rule, and a reviewer who "fixes"
+  it to ink breaks the design. Modals and toasts *are* on ink.
 
 ## Quality bar
 
@@ -126,8 +189,9 @@ A change is done when the observable behaviour is demonstrated, not when the sui
 accepting any change, ask: **was this run, and would a plausible future bug be caught by a check that
 now exists?**
 
-- A new interaction needs a check in `tests/smoke.mjs` that asserts the observable outcome — an
-  attribute, a computed value, a stored document — never the implementation.
+- A new interaction needs a check that asserts the observable outcome — an attribute, a computed
+  value, a stored document — never the implementation. It goes in `tests/behaviour/` (where the
+  ledger also holds it), or in `tests/smoke.mjs` for the vanilla app while the port is in flight.
 - A check that cannot fail is worse than no check. If you cannot construct the input that would make
   it fail, it does not belong in the suite.
 - Claims in commit messages, PR bodies and docs are verifiable assertions. If a message says a

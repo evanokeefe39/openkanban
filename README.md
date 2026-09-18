@@ -103,15 +103,31 @@ npm run check     # syntax check, plus every var() in the CSS must resolve
 
 `npm run check` also runs [`tests/check-styles.mjs`](tests/check-styles.mjs), which exists because of a real defect: deleting a CSS token leaves every `var(--that-token)` silently resolving to nothing — no console error, no failed check, just an element with no background. It cross-references every `var(--x)` use against the definitions and fails the build instead.
 
+### The behaviour suite
+
+`tests/smoke.mjs` covers the surface. [`tests/behaviour/`](tests/behaviour/) covers the behaviour, and it exists for the React port: **one set of checks, run against both apps**. The vanilla app is the reference, the port has to satisfy the same contract, and a check that is green on one and red on the other names the regression exactly instead of leaving it to review.
+
+```sh
+npm run behaviour          # the gate: every required feature, against the vanilla app
+npm run behaviour:react    # progress on the port — report only until it is green
+npm run compare            # diff the two reports: green here, red there, is the regression
+```
+
 If the pinned browser download is unavailable (it can be, behind a proxy), any installed Chromium-family browser will do: `OK_BROWSER_CHANNEL=msedge npm test`.
 
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs exactly that on every pull request and on every push to `main`, and uploads a screenshot of the failure to `tests/.artifacts/` when it fails. Playwright is the only dependency in the repo, and it is a dev dependency: the app itself has none.
+The suite keeps a **coverage ledger** ([`inventory.mjs`](tests/behaviour/inventory.mjs)): every behaviour the app must preserve is an id, at least one check must cover it, and every one of `smoke.mjs`'s checks must have a live successor. An uncovered feature fails the run, so "nothing was dropped" is asserted rather than promised. Two asymmetries are declared rather than hidden: the drag gesture can only be driven on the React target (Playwright cannot synthesise an HTML5 `drop`), and `file://` only works on the vanilla one.
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the smoke suite and the behaviour gate on every pull request and on every push to `main`, uploads dumps to `tests/.artifacts/` when either fails, and reports the port's progress without gating on it. Playwright is a dev dependency for the test harness; the vanilla app itself still has no dependencies at all.
 
 ## Deploying
 
 Any static host works, because there is nothing to build. On Vercel: import the repository, leave the framework preset as **Other**, leave the build command empty, and let it serve the repository root. [`vercel.json`](vercel.json) adds the two things worth adding — `Cache-Control: max-age=0, must-revalidate` so a deploy takes effect on the next load instead of leaving someone on last week's markup, and `nosniff` / `no-referrer` / `DENY` frame headers.
 
 ## Roadmap
+
+**A port to React + Next.js is in progress on `feat/next-react-port`.** This README describes the app as it is today — three static files you can open from a folder — and that is still what ships until the port is verified. Two things are worth knowing up front: the port adds a build step to a project whose selling point is having none, and it **loses `file://` openability**, because a Next static export emits absolute asset paths that resolve against the filesystem root. That loss was confirmed by a test in Phase 0 rather than discovered at cutover, and both of those costs were accepted knowingly.
+
+The port's plan is [`tasks/plans/next-react-port.md`](tasks/plans/next-react-port.md); the feature inventory and the dual-target behaviour suite that will decide whether it is correct is [`tasks/plans/react-port-validation.md`](tasks/plans/react-port-validation.md).
 
 Undo/redo, multiple boards, and an `npx` package that puts a local server, a CLI and an MCP server in front of the same board so an agent can read and write it rather than only render it — plus what was considered and rejected, and why. See [`ROADMAP.md`](ROADMAP.md).
 

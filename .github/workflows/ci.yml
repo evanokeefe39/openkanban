@@ -1,8 +1,15 @@
 name: CI
 
-# The app is three static files, so "does it work" cannot be answered by a build
-# succeeding: there is no build. The gate is a real browser driving the real page
-# (tests/smoke.mjs), plus a syntax check so a typo cannot reach the deployed site.
+# The app is static files, so "does it work" cannot be answered by a build
+# succeeding. The gate is a real browser driving the real page.
+#
+# Three jobs, and the difference between them matters:
+#   smoke      — the original 31-check deploy gate for the vanilla app
+#   behaviour  — the dual-target behaviour suite, GATING against the vanilla app
+#   port       — builds the static export and reports how far the port has got.
+#                Report-only until Phase 5, so a partially ported app cannot turn
+#                the build red while it is being written; the report is uploaded
+#                either way.
 on:
   push:
     branches: [main]
@@ -46,5 +53,70 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: smoke-failure
+          path: tests/.artifacts/
+          if-no-files-found: ignore
+
+  behaviour:
+    name: Behaviour suite against the vanilla app
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install chromium
+        run: npx playwright install --with-deps chromium
+
+      # A gate run: every required feature must be covered by a check that ran on
+      # both the board and the document. An uncovered feature fails the job.
+      - name: Behaviour suite
+        run: npm run behaviour
+
+      - name: Upload the report and any failure screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: behaviour-vanilla
+          path: tests/.artifacts/
+          if-no-files-found: ignore
+
+  port:
+    name: React port progress (report only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install chromium
+        run: npx playwright install --with-deps chromium
+
+      # The build is a real gate: a static export that does not compile is broken.
+      # It also runs the TypeScript check, which is the compiler-level gate for the port.
+      - name: Build the static export
+        run: npm run build
+
+      # Not a gate until Phase 5. The runner says so in its last line, and the
+      # report names exactly which checks are red on the React side.
+      - name: Both targets, cross-app and the visual comparison
+        run: npm run behaviour:all
+
+      - name: Upload the port report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: port-report
           path: tests/.artifacts/
           if-no-files-found: ignore

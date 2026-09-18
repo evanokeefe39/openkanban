@@ -4,8 +4,31 @@ Companion to [`next-react-port.md`](next-react-port.md), which owns the *how* of
 packages, phases, invariants). This document owns the *proof*: the complete inventory of behaviour the
 port must preserve, and the harness that demonstrates it.
 
-**Status:** inventory drafted 2026-09-18. Three decisions open — see [Open questions](#open-questions).
-Harness not yet built.
+**Status:** Phase 0 and Phase 0.5 built on `feat/next-react-port`, 2026-09-18. The inventory is
+complete, the harness runs, and the vanilla target is gated by it. The React target exists as a Phase 0
+shell and is reported, not gated, until Phase 5.
+
+**Decisions taken** (they were the three open questions):
+
+| Decision | Choice | Why |
+| --- | --- | --- |
+| Suite architecture | **Dual-target** — one set of checks run against both apps | Only this names a regression: a check green on vanilla and red on React is the defect a port exists to prevent. The cost is the shared DOM contract below, which the CSS already requires. |
+| Visual gate | **Automated cross-app pixel diff** | "Visually indistinguishable" is the port's headline claim and the one thing behaviour checks cannot see. Compared against the other app, not a committed baseline, so nothing is re-blessed when the design legitimately changes. |
+| First increment | **Harness + inventory + Phase 0 scaffold** | Both targets boot from day one, so the dual-target plumbing is proven before a hundred checks depend on it — and the `file://` question is settled empirically rather than at cutover. |
+
+**Verified, not assumed:**
+
+- `npm run build` emits `out/`; `next build` runs the TypeScript check as part of it.
+- The vanilla app boots from `file://` and persists there (cross-check `cross-05`).
+- **The static export does not** (`cross-06`): the board never renders under `file://`, which is the
+  accepted loss confirmed in Phase 0 rather than discovered in Phase 6.
+- The vanilla behaviour suite is green and its ledger covers every feature the vanilla app can express.
+
+**Lint is deferred, deliberately.** `eslint-config-next@16` bundles `typescript-eslint`, which refuses
+TypeScript 7 outright (`typescript-eslint does not support TS 7.0`). The choice was between pinning the
+compiler back a major to please a linter and dropping the linter for now; `next build`'s TypeScript
+check is the compiler-level gate that actually protects the port, so lint moves to Phase 5, when
+`typescript-eslint` supports the current compiler. Nothing depends on it in the meantime.
 
 ---
 
@@ -81,15 +104,26 @@ The suite must be able to address both apps. Three layers, in priority order:
 2. **Accessible roles and text** wherever the check is really about what a user sees: dialogs, buttons
    by label, `aria-expanded`/`aria-pressed`, the counters string, toast text.
 
-3. **`data-testid`, added additively to both apps**, for the handful of nodes that have no state
-   attribute and no role — a ticket number, an empty-column plate, a `+N HIDDEN` badge, a drop marker.
-   Additive attributes change nothing visually or behaviourally, so the vanilla app may carry them
-   without becoming a different reference implementation. Presentation class names (`.card-num`,
-   `.plate-action`) are **not** addressed by any check: Tailwind is free to replace them.
+3. **Semantic class names** (`.card`, `.card-num`, `.col-head`, `.chip`, `.plate-action`, `.card-refs`,
+   `.card-tick`, `.toast`, `.add-form`, `.drop-before`, `.drag-over`). These are part of the design
+   language rather than incidental markup: the candy cane *is* `.card[data-chain='blocks']::after`,
+   the tick *is* `.card-tick`, the collapse-on-hover *is* `.card-refs`. "Renders identically" and
+   "carries the same classes" are the same requirement, so the port keeps these classes and Tailwind
+   carries the **tokens** (`@theme`, one per `:root` entry, no hex retyped into a utility). A utility
+   class that exists only for spacing or layout is never addressed by a check.
 
-> Consequence to accept: the React app must reproduce layer 1 exactly. That is cheap — those
-> attributes are already load-bearing for CSS (`.card[data-prio]`, `.card[data-chain]`,
-> `[data-picked]`, `html[data-select-mode]`) — and it is what makes the shared suite possible at all.
+   This refines `next-react-port.md`'s Tailwind decision rather than contradicting it: that decision's
+   condition was always "the `:root` tokens move into `@theme` one for one" — it was never a licence
+   to replace the class vocabulary the measured design is written in.
+
+   All three layers live in one file, `tests/behaviour/dom.mjs`, so the shared contract is a reviewable
+   list rather than an emergent property of ninety checks. If a future React implementation would
+   rather use `data-testid`, it is one file to re-point, not ninety.
+
+> Consequence to accept: the React app must reproduce layer 1 exactly, and layer 3 as far as the
+> design language goes. That is cheap — those attributes and classes are already load-bearing for the
+> CSS (`.card[data-prio]`, `.card[data-chain]`, `.card[data-picked]`, `html[data-select-mode]`) — and
+> it is what makes a shared suite possible at all.
 
 ### Capabilities, not silent skips
 
@@ -108,27 +142,39 @@ Everything else runs, unmodified, on both.
 
 ```
 tests/behaviour/
-  harness.mjs        target descriptors, server, browser launch, settle/read helpers
+  harness.mjs        target descriptors, static server, browser session, read helpers
   capabilities.mjs   the capability matrix and its skip semantics
-  inventory.mjs      every feature id (A1…J4) → the check ids that cover it
+  context.mjs        the `ctx` API a check is handed — one way to drive the page
+  dom.mjs            THE DOM CONTRACT: selectors, the state attributes, the seed table
+  inventory.mjs      the feature ids (A1…I12 per target, J1…J5 cross-app), the pre-port
+                     check map, and which features a target cannot express
   index.mjs          the suite registry, in run order
   a-boot.mjs         boot, storage, persistence, lamp, quarantine, repair
   b-cards.mjs        card CRUD, composer, drawer, numbering, due chips, meta
   c-graph.mjs        derived blocked/override, gate, cycles, chain highlight
-  d-move.mjs         ordering, drop markers, cross-column, drag gesture (capability-gated)
+  d-move.mjs         ordering, stamped updates, the drag gesture (capability-gated)
   e-selection.mjs    Ctrl ticks, bulk bar, batch gate, group drag
   f-columns.mjs      columns, flags, settings drawer, board name, counters
   g-filter-view.mjs  search, chips, honesty counters, view options, density
   h-io-reset.mjs     export/import/repair/reset/sample/recovery
   i-design.mjs       the design invariants, computed from the live DOM
-  j-contract.mjs     cross-app: storage round-trip both directions, DOM contract equality
-tests/run-behaviour.mjs   CLI runner: --target, --only, --report, --compare
+  crossapp.mjs       both apps in one process: round-trip both ways, the state contract
+  visual.mjs         the screenshot comparison, per viewport and per overlay state
+tests/run-behaviour.mjs   CLI runner: --target, --only, --mode, --cross, --visual, --compare
 ```
 
-Machine-readable report per run: `{ target, checkId, featureId, status: pass|fail|skipped, detail }`.
-The runner fails the process if any inventory id has no covering check (**the ledger is enforced, so
-"no check dropped" is mechanical rather than a promise**), and fails if a required capability check
-silently skipped.
+Three commands, three jobs in CI:
+
+```sh
+npm run behaviour          # the vanilla gate — this is the one that can fail the build
+npm run behaviour:both     # both targets, report only, until Phase 5
+npm run compare            # diff the last two reports: pass@vanilla + fail@react = a named regression
+```
+
+A machine-readable report per run (`tests/.artifacts/behaviour-<target>.json`) carries
+`{ target, id, feature, name, status, detail, ms }` per check. The runner fails the process when any
+inventory id has no covering check, when a pre-port check has no live successor, or when the target
+failed to boot — so **"no check dropped for convenience" is an assertion, not a promise**.
 
 ### Relationship to the existing gate
 
@@ -295,6 +341,14 @@ The port's Phase 3 exit is "the two apps are visually indistinguishable". That i
 This gate catches what the behaviour suite cannot: a token ported slightly wrong, a missing hairline, a
 density value that drifted.
 
+**Precondition, and it is a Phase 3 one:** the comparison is only meaningful if both apps render the
+same font. The vanilla app loads JetBrains Mono from Google Fonts; the plan has the React app
+self-hosting it via `next/font/local`. The comparison therefore **checks `document.fonts.check('12px
+"JetBrains Mono"')` in both apps first and reports "the comparison would be meaningless"** rather than
+emitting a pixel diff that is really a font fallback. `ROADMAP.md`'s self-host-the-font item is
+promoted from "nice" to "required for this gate" — and once it lands, the vanilla app should point at
+the same local file so neither app depends on a network fetch during CI.
+
 ---
 
 ## Invariants as executable checks
@@ -317,9 +371,16 @@ density value that drifted.
 
 ## Open questions
 
-1. **Suite architecture** — dual-target (recommended) versus a suite rewritten against the React DOM
-   only.
-2. **The visual gate** — automated tolerance-based screenshot comparison, or screenshots for manual
-   review.
-3. **Scope of the first increment** — the harness and the inventory alone, or that plus the Phase 0
-   scaffold, or Phase 0 and the Phase 1 pure model as well.
+**Empty.** The three decisions this document opened with are taken and recorded at the top. What
+remains is execution, and it is the port plan's phases 1–6, with one addition and one sharpening:
+
+1. **Phase 4 must run the five capability-deferred checks for the first time.** `D1`, `D3`, `D6`, `D7`
+   and `D8` are written against the DOM contract but have never executed — the vanilla app's HTML5 drag
+   cannot be synthesised and the React target does not exist yet. They are the suite's one unverified
+   area, and they are also the port's headline win. Executing them is the definition of Phase 4 done,
+   and until then they must not be described as covering anything.
+2. **Phase 3 owns the font decision.** The visual gate is meaningless unless both apps render the same
+   JetBrains Mono, so self-hosting the font moves from `ROADMAP.md`'s backlog to a Phase 3
+   precondition (see [The visual gate](#the-visual-gate)).
+3. **The visual tolerance is frozen at the first green run**, not tuned to taste. If it has to be
+   widened to pass, the widening is the finding.
