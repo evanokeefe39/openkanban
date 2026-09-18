@@ -14,7 +14,8 @@
     "behaviour:both": "node tests/run-behaviour.mjs --target both --mode report",
     "behaviour:all": "node tests/run-behaviour.mjs --all",
     "visual": "node tests/run-behaviour.mjs --target vanilla --visual --mode report",
-    "compare": "node tests/run-behaviour.mjs --compare"
+    "compare": "node tests/run-behaviour.mjs --compare",
+    "lib:test": "vitest run"
   },
   "engines": {
     "node": ">=20"
@@ -31,6 +32,7 @@
     "@types/react-dom": "^19.3.0",
     "playwright": "^1.63.0",
     "tailwindcss": "4.3.3",
-    "typescript": "7.0.2"
+    "typescript": "7.0.2",
+    "vitest": "^5.0.1"
   }
 }
