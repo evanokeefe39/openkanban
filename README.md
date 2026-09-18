@@ -183,3 +183,13 @@ WHERE type = 'message' AND message.role = 'assistant';
 | Test harness and config | 486 lines |
 
 Roughly a cent a minute, and about four hundredths of a cent per line that survived to the end — of which the majority was spent on the parts you cannot see in a screenshot: the derived-blocked model, the validation and repair path, and measuring contrast rather than guessing at it.
+
+## Licence
+
+The code is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE.md). You are free to
+read it, run it, learn from it, and use it for anything noncommercial — personal projects, study,
+hobby work, teaching, research, and use by charities, schools and public bodies. Commercial use is
+not permitted. That includes running it as a paid product, bundling it into something you sell, or
+selling the development itself.
+
+If you want to use it commercially, ask.
