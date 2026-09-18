@@ -939,6 +939,7 @@
     if (overrides.length) parts.push(`${overrides.length} OVERRIDE`);
     $('counters').textContent = parts.join('  ·  ');
     $('prio-legend').hidden = !all.some((c) => c.priority > 0);
+    $('btn-reset').disabled = all.length === 0;
   }
 
   function renderFilters() {
@@ -1626,6 +1627,52 @@
   }
 
   // ==========================================================================
+  // Reset board — the one irreversible action, gated on a typed word
+  // ==========================================================================
+
+  const RESET_WORD = 'delete';
+
+  function resetArmed() {
+    return $('reset-word').value.trim().toLowerCase() === RESET_WORD;
+  }
+
+  function syncResetGate() {
+    $('reset-ok').disabled = !resetArmed();
+  }
+
+  function openResetDialog() {
+    const count = Object.keys(board.cards).length;
+    if (!count) return; // nothing to delete: the button is disabled in this state anyway
+    $('reset-summary').textContent =
+      count === 1
+        ? 'This deletes the one card on this board, and any dependency it is part of.'
+        : `This deletes all ${count} cards on this board, and every dependency between them.`;
+    const word = $('reset-word');
+    word.value = '';
+    syncResetGate();
+    $('reset-dialog').showModal();
+    word.focus();
+  }
+
+  function doResetBoard() {
+    if (!resetArmed()) return;
+    const removed = Object.keys(board.cards).length;
+    // nothing may keep pointing at a card that no longer exists
+    ui.activeCardId = null;
+    ui.dragId = null;
+    ui.chainId = null;
+    commit(() => {
+      board.cards = {};
+      // numbering restarts with the empty board. The invariant is that a number is never reused
+      // while a card carrying it could still be referenced; with no cards left there is nothing
+      // to point at, so the next card is #1 again.
+      board.nextNumber = 1;
+    });
+    $('reset-dialog').close();
+    toast('warn', `BOARD RESET — ${removed} CARD${removed === 1 ? '' : 'S'} DELETED`, 8000);
+  }
+
+  // ==========================================================================
   // Toasts
   // ==========================================================================
 
@@ -2088,6 +2135,21 @@
       confirmAction = null;
       $('confirm-dialog').close();
       if (action) action();
+    });
+
+    // reset dialog: the confirm button is armed by the word, not by a second click
+    $('btn-reset').addEventListener('click', openResetDialog);
+    $('reset-cancel').addEventListener('click', () => $('reset-dialog').close());
+    $('reset-ok').addEventListener('click', doResetBoard);
+    $('reset-word').addEventListener('input', syncResetGate);
+    $('reset-word').addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      if (resetArmed()) doResetBoard();
+    });
+    $('reset-dialog').addEventListener('close', () => {
+      $('reset-word').value = '';
+      syncResetGate();
     });
 
     // cross-tab guard: never silently lose a board written elsewhere

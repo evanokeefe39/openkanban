@@ -34,6 +34,7 @@
         <button class="btn" id="btn-export" type="button"><svg class="icon lucide-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/></svg>EXPORT</button>
         <button class="btn" id="btn-import" type="button"><svg class="icon lucide-upload" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m17 8-5-5-5 5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg>IMPORT</button>
         <button class="btn" id="btn-settings" type="button"><svg class="icon lucide-sliders-horizontal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 5H3"/><path d="M12 19H3"/><path d="M14 3v4"/><path d="M16 17v4"/><path d="M21 12h-9"/><path d="M21 19h-5"/><path d="M21 5h-7"/><path d="M8 10v4"/><path d="M8 12H3"/></svg>SETTINGS</button>
+        <button class="btn danger" id="btn-reset" type="button" title="Delete every card on this board"><svg class="icon lucide-trash-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>RESET</button>
       </header>
 
       <section class="filters" aria-label="Filters">
@@ -208,6 +209,33 @@
       <div class="modal-actions">
         <button class="btn" id="confirm-cancel" type="button">CANCEL</button>
         <button class="btn primary" id="confirm-ok" type="button">CONFIRM</button>
+      </div>
+    </dialog>
+
+    <!-- Reset is the one action here that cannot be undone, so it is gated on typing the word
+         rather than on a second click: a disabled button that becomes armed when the word matches. -->
+    <dialog class="modal" id="reset-dialog" aria-labelledby="reset-title" aria-describedby="reset-summary">
+      <h2 class="modal-title" id="reset-title">Reset board</h2>
+      <div class="modal-text">
+        <p id="reset-summary"></p>
+        <p>Columns, the board name and your view options are kept. This cannot be undone.</p>
+      </div>
+      <label class="field">
+        <span class="field-label">Type delete to confirm</span>
+        <input
+          class="input"
+          id="reset-word"
+          type="text"
+          autocomplete="off"
+          autocapitalize="off"
+          spellcheck="false"
+          placeholder="delete"
+          aria-describedby="reset-summary"
+        />
+      </label>
+      <div class="modal-actions">
+        <button class="btn" id="reset-cancel" type="button">CANCEL</button>
+        <button class="btn danger-solid" id="reset-ok" type="button" disabled>DELETE ALL CARDS</button>
       </div>
     </dialog>
 

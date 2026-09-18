@@ -355,6 +355,26 @@ html[data-highlight-priority='1'] .card[data-prio='3'] {
   color: #ff8b8b;
   border-color: rgba(239, 68, 68, 0.7);
 }
+/* The armed state of a destructive action: filled, because this is the one button on the board that
+   deletes work, and it only reaches this state after the word has been typed. */
+.btn.danger-solid {
+  background: var(--color-destructive);
+  border-color: var(--color-destructive);
+  color: #180406;
+  font-weight: 700;
+}
+.btn.danger-solid:hover:not(:disabled) {
+  background: #ff8b8b;
+  border-color: #ff8b8b;
+  color: #180406;
+}
+.btn.danger-solid:disabled,
+.btn.danger-solid:disabled:hover {
+  background: transparent;
+  border-color: rgba(239, 68, 68, 0.28);
+  color: rgba(239, 68, 68, 0.5);
+  opacity: 1;
+}
 .btn.mini {
   padding: 2px 6px;
   font-size: 11px;
