@@ -34,9 +34,8 @@
   --line: rgba(255, 255, 255, 0.1);
   --line-strong: rgba(255, 255, 255, 0.16);
   --col-bg: #0d0b13;
-  /* column header: "ink black" teal, per the user's call — deliberately a different temperature
-     from the column body it caps, so the header reads as a band rather than a tint */
-  --col-head-bg: #00181f;
+  /* ink black: the filter control and the filter pane it opens (user-directed) */
+  --ink-bg: #00161c;
   /* card surface: warm "coffee bean" against the cool column and panel surfaces, per the user's
      call — the priority tints below mix into this value, so they follow it automatically */
   --card-bg: #1f1819;
@@ -386,6 +385,16 @@ html[data-highlight-priority='1'] .card[data-prio='3'] {
   align-items: center;
   gap: 6px;
   flex: 0 0 auto;
+  background: var(--ink-bg);
+  color: var(--color-foreground);
+  border-color: var(--line-strong);
+}
+/* lifts derived from the ink itself, so hover and open states stay in the same family rather than
+   landing an indigo patch on a teal control */
+.filter-toggle:hover {
+  background: color-mix(in oklab, var(--ink-bg) 88%, #ffffff);
+  color: var(--color-foreground);
+  border-color: var(--line-strong);
 }
 .filter-toggle .chev {
   width: 8px;
@@ -393,7 +402,7 @@ html[data-highlight-priority='1'] .card[data-prio='3'] {
   transition: transform 140ms var(--ease-out);
 }
 .filter-toggle[aria-expanded='true'] {
-  background: var(--color-surface-elevated);
+  background: color-mix(in oklab, var(--ink-bg) 84%, #ffffff);
   color: var(--color-foreground);
   border-color: var(--line-strong);
 }
@@ -411,7 +420,7 @@ html[data-highlight-priority='1'] .card[data-prio='3'] {
 }
 
 /* the pane floats over the board rather than pushing it down — the design rejects shadows, so the
-   floating read comes from an opaque elevated surface and a stronger border than the strip's */
+   floating read comes from an opaque ink surface and a stronger border than the strip's */
 .filter-panel {
   position: absolute;
   top: 100%;
@@ -424,7 +433,7 @@ html[data-highlight-priority='1'] .card[data-prio='3'] {
   max-width: min(680px, calc(100vw - 24px));
   padding: 10px 12px 12px;
   border: 1px solid var(--line-strong);
-  background: var(--color-surface-elevated);
+  background: var(--ink-bg);
 }
 .filter-panel[hidden] {
   display: none;
@@ -440,7 +449,9 @@ html[data-highlight-priority='1'] .card[data-prio='3'] {
   font-size: 9px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--color-foreground-muted);
+  /* secondary, not muted: these are 9px labels and the muted token measured ~3.8:1 on the ink pane
+     (and ~3.2:1 on the elevated surface before it), both under AA for small text */
+  color: var(--color-foreground-secondary);
 }
 .filter-group .chips {
   flex: 1 1 auto;
@@ -641,13 +652,16 @@ button.chip[aria-pressed='true']:hover {
   background: var(--col-bg);
   border: 1px solid var(--line);
 }
+/* the header is the page colour, so the column body is what reads as the container — and because
+   the band now shares the page's fill, its bottom hairline is the only thing drawing the boundary,
+   so it carries the stronger line rather than the standard one */
 .col-head {
   display: flex;
   align-items: center;
   gap: 7px;
   padding: var(--density-head-pad);
-  background: var(--col-head-bg);
-  border-bottom: 1px solid var(--line);
+  background: var(--color-background);
+  border-bottom: 1px solid var(--line-strong);
 }
 .col-name {
   margin: 0;

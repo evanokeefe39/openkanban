@@ -48,12 +48,17 @@ labels all shipped, plus the dependency graph that no option mentioned.
   from `--card-bg`, so all three followed the change without retuning. Measured consequence: the card
   now sits 23 RGB from the column instead of 28 — a slightly quieter separation the audits noticed
   too — and P1's orange rail reads less vivid against a warm surface than it did against navy.
-  The **column header is the second exception** (user-directed): `#00181f`, an "ink black" teal that
-  caps the navy column body as a band rather than a tint. Measured on it: name and count 14.9:1, the
-  hidden counter 7.2:1, header-to-body separation 22 RGB. Every column has its own temperature now —
-  teal band, navy column, coffee card — and both audits read the set as deliberate rather than
-  patchy, with the caveat that it is close to the edge: three dark, low-saturation hues shifting
-  within one screen is a lot, and the next accent added should not be a fourth.
+  The **column header is the second exception** (user-directed): it shares the page background
+  `#0a0608` exactly, so the column body reads as the container and the header as the page showing
+  through. Because the band no longer has a fill of its own, its bottom hairline carries the
+  stronger line (16% white, ~1.5:1 rendered against the page) — with a 10% line the boundary was
+  ambiguous, which a vision audit flagged before the measurement confirmed it.
+  The **ink black `#00161c`** (user-directed, third revision of the value) is the filter control and
+  the filter pane it opens: button label 15.2:1, pane group names 7.3:1 after moving them off the
+  muted token, chip text 7.8:1, pressed chips ivory-on-black as everywhere else. Control-to-page and
+  pane-to-page separation are both 27 RGB, so the control reads as a distinct object in the strip and
+  the pane reads as floating. Hover and open states are `color-mix` lifts of the ink itself (Δ40 and
+  Δ55) rather than the indigo elevated surface, which would have landed as a foreign patch.
 - **Signature**: the board is a wiring diagram — hovering a card lights its upstream chain (amber)
   and downstream chain (indigo). Column headers carry only the name, the hit count and the add
   button; no status lamp and no colour swatch beside a name. Colour is reserved for meaning that
@@ -258,12 +263,12 @@ Verification tally — the runs, each counted once, summing to the total:
 20 view options, 5 rail and tint geometry, 22 consolidated regression, 5 keyboard and pane scoping,
 14 icons + popover (first pass), 21 icons + popover + numbers + hold-D (after the fixes),
 8 numbering/migration/edge semantics, 10 regression over the new features, 4 hover-ring semantics,
-7 regression over the card surface change, 7 column-header checks.
-**316 assertions across 20 runs.**
+7 regression over the card surface change, 7 column-header checks, 9 ink-surface checks.
+**325 assertions across 21 runs.**
 
-Thirty failed on first pass. Two were real product defects, both found by a test rather than
+Thirty-one failed on first pass. Two were real product defects, both found by a test rather than
 by review, both fixed: the icon CDN executing nothing (defect 11) and a chip click dismissing the
-pane (defect 12). The other twenty-eight were the test being wrong, and they are worth listing because
+pane (defect 12). The other twenty-nine were the test being wrong, and they are worth listing because
 each one is a repeatable way to lie to yourself about a UI: guessing a count or a set instead of
 deriving it from the store; asserting a computed colour that `display:none` does not change; reading
 a colour through the `background` shorthand, which canvas cannot parse and silently renders black;
@@ -278,7 +283,9 @@ Every one was re-run in corrected form and passed. Three further patterns from t
 worth naming because they recurred in the same session: passing `Array.map` a helper that takes a
 property name, so the index becomes the property and the colour reads black; letting a measurement
 helper lose its default property, which fails the same silent way; and reconstructing a screenshot's
-file name from memory instead of reading the path the tool returned.
+file name from memory instead of reading the path the tool returned. A fourth belongs beside them:
+comparing a colour as a formatted string rather than as channels, so `rgb(249,255,208)` and
+`rgb(249, 255, 208)` read as a failure when they are the same colour.
 
 Two further defects (13, 14) were never test failures: they were caught by measuring contrast after
 a colour change and by a vision audit reading one value as two meanings. Both are fixed and both now
@@ -441,12 +448,17 @@ that DONE was narrower; measurement shows five × 268px and zero card/chip overf
     separation is now 23 RGB rather than 28, and the cool chips on a warm card are the one place the
     two temperatures touch. If the warmth is kept, the next candidates are the chip surface and the
     column background; nothing else depends on the card's hue.
-20. **The column header is its own token, not a reuse of the panel surface** (user-directed,
-    `#00181f`). It was `--color-surface`, which would have dragged the whole indigo panel family teal
-    if changed in place; a separate `--col-head-bg` keeps the change to the one band. The add
-    button's hover moved from a fixed elevated-surface colour to a white overlay lift, because a navy
-    patch on a teal header reads as a glitch rather than a hover — the same reasoning that produced
-    the derived card hover lift.
+20. **Header, filter control and pane each got their own surface** (user-directed, settled over three
+    revisions). The header borrows `--color-background` rather than a colour of its own, so it tracks
+    the page; the filter control and its pane share a new `--ink-bg` (`#00161c`). The sequence
+    matters: the header was first given ink, and the token was named `--col-head-bg` for that job;
+    when the user moved the ink to the filter control, the token was renamed rather than left
+    describing the wrong thing. Sibling states are derived from their own surface — the add button
+    lifts with a white overlay, the filter button with `color-mix` of its own ink — because a fixed
+    elevated-surface hover lands as a foreign patch once the surface underneath is no longer indigo.
+    Anything whose 9-10px text sits on a darkened surface gets its contrast re-measured, not assumed:
+    the filter group names moved from muted to secondary (3.8:1 → 7.3:1) for exactly the reason the
+    card number did (4.3:1 → 6.9:1).
 
 ## Reasoning trace
 
