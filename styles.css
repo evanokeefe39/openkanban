@@ -34,8 +34,11 @@
   --line: rgba(255, 255, 255, 0.1);
   --line-strong: rgba(255, 255, 255, 0.16);
   --col-bg: #0d0b13;
-  --card-bg: #17172a;
-  --card-bg-hover: #1e1e30;
+  /* card surface: warm "coffee bean" against the cool column and panel surfaces, per the user's
+     call — the priority tints below mix into this value, so they follow it automatically */
+  --card-bg: #1f1819;
+  /* the hover lift matches the one the neutral surface used: RGB distance ~12 */
+  --card-bg-hover: #261f20;
   --inset-bg: #0b0a12;
 
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -158,10 +161,11 @@ html[data-show-status='0'] .chip.blocks {
    (measured 5-9 RGB apart). P0 therefore takes the strongest wash so urgency still reads in
    the fill, P1 sits in the middle, and P2 — near-desaturated cream — needs a heavy mix to
    register at all. Cream is the binding constraint: past 38% its fill drops below AA for the
-   card text. Measured on the live board at these values: P0 rgb(113,38,70) contrast 8.3,
-   P1 rgb(78,43,51) contrast 10, P2 rgb(90,93,95) contrast 5.4, against a card surface of
-   rgb(23,23,42) — pairwise gaps 40/68/65, lifts from the surface 96/59/108, so no tier is
-   closer to the plain card than the eye can see. */
+   card text. Measured on the live board at these values, against the coffee-bean card surface of
+   rgb(31,24,25): P0 rgb(117,37,58) contrast 8.3, P1 rgb(84,42,34) contrast 9.9, P2 rgb(97,93,80)
+   contrast 5.4 — pairwise gaps 41/70/63, lifts from the surface 93/57/110, so no tier is closer
+   to the plain card than the eye can see. The mixes read the card surface from `--card-bg`, so
+   they followed the surface when it changed from navy to warm without being retuned by hand. */
 html[data-highlight-priority='1'] .card[data-prio='1'] {
   background: color-mix(in oklab, var(--color-priority-p0) 44%, var(--card-bg));
   border-color: color-mix(in oklab, var(--color-priority-p0) 48%, var(--line));
@@ -804,12 +808,14 @@ button.chip[aria-pressed='true']:hover {
 .card-meta:empty {
   display: none;
 }
-/* ticket number: assigned once, never reused, and the handle people say out loud */
+/* ticket number: assigned once, never reused, and the handle people say out loud.
+   Secondary rather than muted: at 10px the muted token measured 4.3:1 on the old neutral card
+   and 3.6:1 on the warm one, both under AA for small text. */
 .card-num {
   font-size: 10px;
   line-height: 1.4;
   letter-spacing: 0.02em;
-  color: var(--color-foreground-muted);
+  color: var(--color-foreground-secondary);
   font-variant-numeric: tabular-nums;
 }
 html[data-show-numbers='0'] .card-num {
@@ -850,15 +856,18 @@ html[data-deps-mode='1'] .card-refs {
   box-shadow: inset 0 -2px 0 0 var(--ivory);
 }
 
-/* dependency chain highlight (inset rings, consistent with borders-only depth) */
+/* dependency chain highlight (inset rings, consistent with borders-only depth).
+   The neutral ring is the foreground grey, NOT the ivory/cream: cream is P2's priority colour, so
+   using it here would make one value mean both "a card with no priority is hovered" and "this is a
+   P2 card". Ivory is also reserved for the single primary action in a dialog. */
 .card[data-chain='self'] {
-  box-shadow: inset 0 0 0 1px rgba(249, 255, 208, 0.85);
+  box-shadow: inset 0 0 0 1px rgba(232, 232, 237, 0.85);
 }
 /* when priority is on the board as colour — rails or full-card tint — hovering a card rings it in
-   its own priority instead of the neutral cream, so the hover reads as that card, not as a mode */
+   its own priority instead of the neutral grey, so the hover reads as that card, not as a mode */
 html[data-show-priority='1'] .card[data-chain='self'],
 html[data-highlight-priority='1'] .card[data-chain='self'] {
-  box-shadow: inset 0 0 0 1px var(--prio-color, rgba(249, 255, 208, 0.85));
+  box-shadow: inset 0 0 0 1px var(--prio-color, rgba(232, 232, 237, 0.85));
 }
 .card[data-chain='up'] {
   box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.6);

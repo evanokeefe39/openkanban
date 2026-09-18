@@ -42,6 +42,12 @@ labels all shipped, plus the dependency graph that no option mentioned.
 - **Domain**: dispatch board, job ticket, station, pull system, wiring diagram, engraved plate.
 - **Colour world** (inherited, not invented): near-black velvet `#0a0608`, indigo panel `#141420`,
   signal amber `#f59e0b`, VU green `#22c55e`, alarm red `#ef4444`, ivory sticky `#F9FFD0`.
+  The **card surface is the exception** (user-directed): `#1f1819`, a warm "coffee bean" against the
+  cool columns and panels, chosen by eye. Its hover lift `#261f20` was derived to match the previous
+  neutral surface's lift exactly (RGB distance 12.1 vs 11.6), and the priority tints read the surface
+  from `--card-bg`, so all three followed the change without retuning. Measured consequence: the card
+  now sits 23 RGB from the column instead of 28 — a slightly quieter separation the audits noticed
+  too — and P1's orange rail reads less vivid against a warm surface than it did against navy.
 - **Signature**: the board is a wiring diagram — hovering a card lights its upstream chain (amber)
   and downstream chain (indigo). Column headers carry only the name, the hit count and the add
   button; no status lamp and no colour swatch beside a name. Colour is reserved for meaning that
@@ -245,8 +251,9 @@ Verification tally — the runs, each counted once, summing to the total:
 24 header/rename robustness, 7 real-click gate, 14 colour-swatch removal, 30 palette + filter pane,
 20 view options, 5 rail and tint geometry, 22 consolidated regression, 5 keyboard and pane scoping,
 14 icons + popover (first pass), 21 icons + popover + numbers + hold-D (after the fixes),
-8 numbering/migration/edge semantics, 10 regression over the new features.
-**298 assertions across 16 runs.**
+8 numbering/migration/edge semantics, 10 regression over the new features, 4 hover-ring semantics,
+7 regression over the card surface change.
+**309 assertions across 18 runs.**
 
 Twenty-eight failed on first pass. Two were real product defects, both found by a test rather than
 by review, both fixed: the icon CDN executing nothing (defect 11) and a chip click dismissing the
@@ -262,6 +269,11 @@ dispatching a synthetic key event on `document` when the handler is scoped to an
 testing a hover on a card a filter had hidden; a wrong column id; and three fixtures where the
 "blocked" card's blocker sat in a DONE column, so the card was legitimately unblocked.
 Every one was re-run in corrected form and passed.
+
+Two further defects (13, 14) were never test failures: they were caught by measuring contrast after
+a colour change and by a vision audit reading one value as two meanings. Both are fixed and both now
+have assertions, which is the pattern worth keeping — the test suite confirms what you thought to
+ask, and something outside it has to notice the question you did not ask.
 
 Export evidence, split honestly: the payload is test-verified twice over — captured from the app's
 own `URL.createObjectURL` call by a script injected into the page's world, and proven complete by a
@@ -330,6 +342,17 @@ horizontal scroll: 0), which is the standard kanban affordance, and at COMPACT d
     already re-rendered the pane, so the target was detached and the guard failed. Fixed by moving
     that check to the capture phase, where the node is still attached. Found by a test that clicked a
     chip and asserted the pane stayed open, not by reading the diff.
+13. **The warm card surface pushed the ticket number under AA** — the 10px number used the muted
+    token, which measured 4.3:1 on the old neutral surface (already under the 4.5:1 floor for small
+    text) and dropped to 3.6:1 on the coffee bean, because a warm surface carries more luminance.
+    Moved to the secondary token: 6.9:1. Caught by measuring contrast after the colour change rather
+    than by looking at it.
+14. **Cream meant two things at once** — the neutral hover ring was ivory/cream, which is also P2's
+    priority colour, so a cream ring said both "this card has no priority and is hovered" and "this
+    is a P2 card". Found by a vision audit of the new surface calling the cream rails the weakest
+    element. The neutral ring is now the foreground grey, cream means P2 and nothing else, and the
+    ivory stays reserved for the single primary action in a dialog. Verified: P0 rings pink, P2 rings
+    cream, an unprioritised card rings grey — three distinct values.
 
 Claims that did not survive checking: a visual audit asserted the columns had different widths and
 that DONE was narrower; measurement shows five × 268px and zero card/chip overflow. The same audit's
@@ -402,6 +425,12 @@ that DONE was narrower; measurement shows five × 268px and zero card/chip overf
     (rails showing, or the full-card tint enabled), instead of the neutral cream used for a card
     with no priority. The chain's up/down rings keep amber and indigo: they encode direction, which
     a priority colour cannot.
+19. **The card surface is warm, and only the card surface** (user-directed, `#1f1819`). Columns,
+    panels and chips stay cool indigo, so the warmth reads as material rather than as a theme swap —
+    a deliberate contrast the audits called coherent. The consequence to decide on later: card↔column
+    separation is now 23 RGB rather than 28, and the cool chips on a warm card are the one place the
+    two temperatures touch. If the warmth is kept, the next candidates are the chip surface and the
+    column background; nothing else depends on the card's hue.
 
 ## Reasoning trace
 
