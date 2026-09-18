@@ -1,0 +1,287 @@
+# OpenKanban MVP — Executable Specification
+
+## Intent
+
+A single-board kanban tool that runs from `file://` or a local static server with no build step,
+for one person on one machine. It must answer two questions at a glance: *what can I work on right
+now*, and *what is stuck behind what*. Card dependencies are first-class: a blocked card cannot
+silently enter a gated column, and hovering a card reveals its whole blocking chain.
+
+## Context Package
+
+### Relevant existing code
+None — `openkanban` is a greenfield, empty directory (initialised as a git repo on `feat/mvp`).
+The design language is lifted from `C:/Users/evano/repos/ambient-noise-app-v2`
+(`src/app/globals.css` tokens, `src/app/page.tsx` render grammar, `AGENTS.md` "Design language —
+UNIT-02"): JetBrains Mono, hard 1px rules, zero radius, uppercase tracked labels, lamps that
+reflect real state, segmented counters, viewport fit with no page scroll.
+
+### Architectural constraints
+- No framework, no bundler, no npm install. Classic `<script>` (not ES modules) so the app works
+  from `file://` as well as `http://`.
+- State lives in `localStorage` under one versioned key. No backend, no accounts.
+- Rendered with DOM APIs and `textContent` for all user-supplied strings (imported JSON is
+  untrusted input).
+- Native `<dialog showModal()>` for every overlay: focus trap, Escape, inertness for free.
+
+### Prior decisions (from the scope interview)
+| Decision | Choice |
+|---|---|
+| Persistence | localStorage + Export/Import JSON |
+| Delivery | Zero-build static files (`index.html`, `app.js`, `styles.css`) |
+| Blocker policy | **Warn, allow override** — moving a blocked card into a gated column asks for confirmation |
+| Dependency view | Badges + transitive chain highlight on hover/focus (no SVG arrows) |
+| Columns | Backlog / To Do / In Progress / Review / Done, editable in a settings screen |
+| Card fields | Title, notes, due date, priority, labels (+ the derived dependency graph) |
+
+### Design direction (interface-design checkpoint)
+- **Domain**: dispatch board, job ticket, station, pull system, wiring diagram, engraved plate.
+- **Colour world** (inherited, not invented): near-black velvet `#0a0608`, indigo panel `#141420`,
+  signal amber `#f59e0b`, VU green `#22c55e`, alarm red `#ef4444`, ivory sticky `#F9FFD0`.
+- **Signature**: the board is a wiring diagram — hovering a card lights its upstream chain (amber)
+  and downstream chain (indigo); column headers carry lamps whose colour is derived from whether
+  that column holds anything actionable.
+- **Rejecting defaults**: rounded shadowed sticky cards (Trello) → zero-radius plates, borders-only
+  depth, no shadows; pastel column tints → lightness steps only; priority as a coloured pill
+  everywhere → a 2px top rule plus a monospace tag.
+- **Hierarchy**: the focal element is the actionable work — blocked cards are deliberately demoted
+  (secondary title colour) so the eye lands on cards that can move. Density: workbench-tight
+  (4px base unit, 8px gaps, 12px board padding). One accent per meaning; ivory reserved for the
+  single primary action in a dialog.
+- **Type**: JetBrains Mono only, tabular numerals on every counter. Caption 10 / body 12 / sub 13 /
+  title 15. Weight and colour carry hierarchy, not size.
+- **Depth**: borders-only, declared once. Hairlines at `rgba(255,255,255,.06–.14)`; no box-shadows
+  except inset rings used as borders for chain highlighting.
+
+## Behavioural Contracts
+
+**C1 — Persistence.** GIVEN a board with any change (card, column, filter-independent), WHEN the
+change is applied, THEN the board is serialised to the storage key before the render returns, and
+the header lamp reads `SAVED` with the write timestamp. A failed write leaves the lamp reading
+`ERROR` with the reason in the tooltip; the UI keeps working in memory.
+
+**C2 — First run.** GIVEN no stored board, WHEN the app boots, THEN a seed board with the five
+default columns, eight or more cards, one resolved blocker pair, one blocked chain of depth ≥ 3
+and at least one label/priority/due-date variety is rendered, and it is persisted.
+
+**C3 — Corrupt storage.** GIVEN an unparseable or structurally invalid stored payload, WHEN the app
+boots, THEN the payload is preserved under `<key>.corrupt`, an error toast names the problem, and
+the seed board loads. Nothing is silently discarded.
+
+**C4 — Blocked is derived.** GIVEN card X with `blockedBy` containing card Y, WHEN Y is not in a
+column flagged `done`, THEN X is blocked. Blocked state is never stored as a flag; moving Y into a
+done column clears X's blocked state on the same render.
+
+**C5 — Gate on entry.** GIVEN a blocked card and a column flagged `gate`, WHEN the card is dropped
+or moved into that column by any path (drag, drawer "move to"), THEN a confirmation dialog names
+the unfinished blocker(s) and offers cancel; cancelling leaves the board byte-identical, and
+confirming applies the move. Non-gated columns never prompt.
+
+**C6 — Override is visible.** GIVEN a blocked card sitting in a gated column, THEN the card carries
+an `OVERRIDE` chip in amber. The chip disappears the moment the card stops being blocked.
+
+**C7 — Cycle refusal.** GIVEN any attempt to add a blocker link that would create a cycle (including
+a self-link), WHEN the attempt is made, THEN the link is refused, the board is unchanged, and the
+message names the cycle path.
+
+**C8 — Chain highlight.** GIVEN a card with links, WHEN it is hovered or keyboard-focused, THEN its
+transitive blockers and transitive dependents receive distinct highlight rings, and the highlight
+clears on mouse-out/blur or when a different card is entered.
+
+**C9 — Ordering.** GIVEN a drop onto the upper half of a card, THEN the dragged card is inserted
+before that card; lower half or column body inserts after/at the end. Ordering is persisted per
+column as an ordered id list.
+
+**C10 — Referential integrity.** GIVEN a card deletion, WHEN other cards referenced it, THEN those
+`blockedBy` edges are removed and a toast reports how many links were dropped. GIVEN a column
+deletion, WHEN it holds cards, THEN they move to the nearest remaining column to the left and the
+toast reports the count; deleting the last remaining column is refused.
+
+**C11 — Column invariants.** GIVEN settings, WHEN a column name is blanked, THEN the rename is
+refused and the previous name is restored. WHEN no column is flagged `done` after an edit, THEN the
+last column is flagged `done` and a toast reports the repair.
+
+**C12 — Import/Export.** GIVEN export, THEN a JSON file containing `version`, `name`, `columns`,
+`cards` and `exportedAt` downloads. GIVEN an import, THEN the payload is validated before it
+replaces anything: structurally invalid input is refused with the reason and the board untouched;
+recoverable defects (edges to missing cards, cards outside any column, out-of-range priority) are
+repaired and each repair is reported.
+
+**C13 — Filter honesty.** GIVEN an active filter, THEN non-matching cards are hidden but never
+moved or mutated, each column reports how many of its cards are hidden, and a board with zero
+matches shows a single `NO CARDS MATCH` plate rather than an empty screen. Counters in the header
+always describe the whole board, not the filtered view.
+
+**C14 — Boot without a server.** GIVEN the folder opened directly (`file://index.html`), THEN the
+app boots and persists identically — no ES modules, no fetch of local assets.
+
+## Edge Case Inventory
+
+1. First run, empty storage → seed (C2).
+2. Corrupt JSON / wrong shape in storage → quarantine + seed + error toast (C3).
+3. Stored payload from a future schema version → refuse to load, quarantine, seed, report.
+4. localStorage unavailable (quota, private mode) → lamp `ERROR`, board still usable in memory.
+5. Second tab open → `storage` event from another tab warns that the board changed elsewhere.
+6. Self-block attempt → refused (C7).
+7. Blocker chain of depth 3+, hover on the deepest card → all ancestors highlighted.
+8. Blocker already in a `done` column → card is not blocked and shows no badge.
+9. Duplicate blocker add → no-op with a notice.
+10. Delete a card that blocks two others → both edges dropped, reported (C10).
+11. Delete the last column → refused.
+12. Delete a column holding cards → cards move left, reported.
+13. Move a blocked card into a gated column → confirm; cancel leaves state untouched (C5).
+14. A blocker of a card already in a gated column becomes unfinished → override chip appears
+    without any user action (C6).
+15. Drag onto the card itself or the same position → no write, no toast.
+16. Empty column → `EMPTY` plate.
+17. Filter matching nothing → single message plate (C13).
+18. Very long title/notes → clamped on the card, scrollable in the drawer; no board layout shift.
+19. Due date today / past / future on a done card → `TODAY`, red `OVERDUE`, muted date, and no
+    red on completed work.
+20. Card with no labels, notes, or links → meta row collapses (no empty chips).
+21. Blank title on create/edit → refused, previous value kept.
+22. Import with a card id referenced by two columns → kept in the first only, reported.
+23. Escape / backdrop click closes dialogs; focus returns to the card that opened it.
+24. Import while a drawer is open → drawers close before the board re-renders.
+25. Adding cards rapidly inline → input stays open and focused with text preserved.
+26. Drag in progress then `Escape` → drag abandoned, no mutation.
+
+## Definition of Done
+
+- [ ] C1–C14 each verifiable in the running app; edge cases 1–26 handled.
+- [ ] Runs from a static server and from `file://`.
+- [ ] Verified in a real browser: boot, seed, add/edit/delete card, drag within and across columns,
+      gate prompt (cancel and confirm), cycle refusal, chain highlight, column settings
+      (add/rename/reorder/gate/delete), export, import, filter, reload persistence.
+- [ ] No console errors during the verification pass.
+- [ ] No new dependencies (Google Fonts is a CDN link, not a dependency).
+- [ ] Assumption log and reasoning trace recorded in the review section below.
+- [ ] Committed on `feat/mvp` with conventional commits.
+
+## Negative Space
+
+**Must not change**: nothing pre-exists in this repo; the design tokens are copied from
+`ambient-noise-app-v2` and that repo is not modified by this work.
+
+**Out of scope**: multiple boards, accounts, sync/backend, real-time collaboration, WIP limits,
+card comments/history/attachments, search beyond title/notes/labels, mobile-app parity
+(touch drag), auto-sorting by priority, SVG dependency arrows, keyboard card reordering,
+notifications, theming/light mode.
+
+**Reserved for human review**: whether the gate default set (In Progress, Review, Done) is right;
+whether `done` should be positional (last column) rather than a per-column flag; whether labels
+should become a managed registry instead of free-form strings.
+
+## Open Questions
+
+None — all scope decisions were resolved in the interview of 2026-09-18.
+
+---
+
+# Run
+
+```
+cd C:/Users/evano/repos/openkanban
+python -m http.server 8080     # then open http://localhost:8080
+```
+
+Or double-click `index.html`. Board state lives in `localStorage['openkanban.board.v1']`.
+Double-clicking the card title opens the drawer; hovering a card lights its dependency chain;
+the header lamp reports storage write truth.
+
+---
+
+# Review
+
+## Definition of done — status
+
+| Item | Status | Evidence |
+|---|---|---|
+| C1 persistence + lamp truth | done | writes verified after every mutation; lamp `SAVED` after reload; `STORAGE ERROR` path exercised via the unavailable branch |
+| C2 seed board | done | fresh boot renders 11 cards / 5 columns, 4 blocked, 1 override |
+| C3 corrupt payload | done | garbage payload → error toast, quarantine key holds the original bytes, seed loads |
+| C4 blocked is derived | done | removing one link cleared `BLOCKED ×1` and `OVERRIDE` with no other action |
+| C5 gate on every move path | done | native pointer drag → prompt; drawer **MOVE TO** → prompt; cancel left the board unchanged in both |
+| C6 override visible | done | `OVERRIDE` chip appears on confirm; counter reads `2 OVERRIDE`; survives reload |
+| C7 cycle refusal | done | cyclic candidate disabled with the path; Enters falls through to the guard, which refuses and names `A → B` |
+| C8 chain highlight | done | hover rings self / up / down; resolved blocker not ringed; rings clear on mouse-out |
+| C9 ordering | done | drop-on-card inserts by midpoint; reorder persisted (verified through the model) |
+| C10 referential integrity | done | card delete drops dependent edges and reports the count; last column cannot be deleted |
+| C11 column invariants | done | blank rename refused with a toast; clearing the last `DONE` flag re-flags and reports it |
+| C12 import/export | done | export → import round trip is byte-identical (minus timestamp); bad JSON refused; priority clamped, bad date dropped, ghost link dropped — each repair listed |
+| C13 filter honesty | done | search narrows to matching cards over title+notes+labels, `+N HIDDEN` per column, `NO CARDS MATCH` plate, counters stay whole-board |
+| C14 `file://` boot | done | classic script, no modules, no local fetches — served and direct-open paths identical |
+| Edge cases 1–26 | done | all exercised in the verification runs below |
+| Browser verification | done | 5 scripted runs, 128 assertions, no console errors |
+| No new dependencies | done | Google Fonts is a CDN link; zero npm packages |
+
+Total assertions: 75 (first pass) + 17 (round trip/recovery) + 14 (native drag gate) + 12 (recompute) + 10 (layout/contrast) = 128, all green after the fixes below.
+
+## Defects found and fixed during verification
+
+1. **Search field was not part of the design system** — `#filter-query` never carried the `.input`
+   class, so it rendered with UA chrome and a 2.43:1 placeholder. Fixed; now 7.76:1 and visually
+   consistent with every other field. Found by measuring computed contrast, not by eye.
+2. **Muted text below AA on near-black** — `+ ADD CARD` measured 3.6:1, the counters 4.04:1, the
+   `BLOCKED`/`OVERDUE` chips 4.5:1. Raised to 7.7 / 7.7 / 7.12:1.
+3. **Hover re-rendered the whole board** — which reset every column's scroll position under the
+   pointer, and recomputed closure sets per card (O(n²)). Replaced with in-place ring patching and
+   a hoisted closure pass.
+4. **Escape-closing a drawer could drop a pending edit** — a focused input is removed before its
+   `change` event fires. Added `flushCardFields` / `flushSettingsFields` on dialog close.
+5. **`boot()` returned before binding listeners** on the repaired, seeded, and error paths — the
+   board would have rendered but been dead to input. Found by reading the control flow back.
+6. **Column geometry** — columns were content-height, leaving half the viewport empty. Now
+   full-height tracks with the add-card shelf pinned to the bottom, which also makes the drop
+   target large.
+
+Claims that did not survive checking: a visual audit asserted the columns had different widths and
+that DONE was narrower; measurement shows five × 268px and zero card/chip overflow. The same audit's
+"low-contrast" complaint was right, but for a different reason than stated (item 1).
+
+## Assumption log (sorted by consequence)
+
+1. **Blocked/override are derived, never stored.** Consequence: high — it is the core model. The
+   spec fixes the policy (warn-then-override) but not the representation. Derived state makes
+   "resolving a blocker clears the badge" free, at the cost of a graph walk per render.
+2. **Gating is a per-column flag, not positional.** Consequence: high. "Any column after the
+   first" breaks as soon as a column is inserted; the flag keeps the policy visible on the same
+   settings screen that defines the lifecycle states.
+3. **`done` is a per-column flag with a self-repair invariant.** Consequence: medium. If no column
+   is flagged done, the last one is re-flagged and the repair is announced — never silent.
+4. **Cycle handling prevents before it refuses.** Consequence: medium. The picker disables
+   cycle-creating candidates and shows the path; the runtime guard still refuses (reached by
+   pressing Enter on a filtered list), so the invariant does not depend on the UI.
+5. **Chain rings follow unfinished blockers only**, matching the `BLOCKED ×n` badge; downstream
+   follows every dependent, matching `BLOCKS n`. Consequence: medium — highlighting a resolved
+   blocker would light up work that is not in the way.
+6. **Labels are free-form strings** (uppercased, colour by hash) with no registry, which removes
+   orphan-label management entirely. Consequence: low-medium.
+7. **Import repairs are itemised, never silent**, and structurally invalid payloads are refused
+   wholesale. Consequence: medium.
+8. **Native HTML5 drag, with the drawer's MOVE TO row as the universal path** (keyboard, touch,
+   and the escape hatch when a pointer drag is awkward). Consequence: medium — no DnD dependency.
+9. **Priority is encoded twice** (2px rail + text chip) because colour alone is not an encoding.
+   Consequence: low. The user asked what the bars meant, so a legend now documents it and hides
+   itself when no card carries a priority.
+
+## Reasoning trace
+
+- **Classic script, not modules**: ES modules cannot load over `file://`, and the brief asked for
+  something runnable in ten minutes — possibly from a double-click.
+- **`<dialog>` + `showModal()`** for every overlay buys focus trap, Escape handling, and page
+  inertness instead of hand-rolling them.
+- **One gate check in `attemptMove`** which every move path funnels through (drop, header drop,
+  drawer row) so the policy cannot diverge between input methods.
+- **Storage lamp as engine truth**: it reflects the last write attempt, not intent, so a quota
+  failure or private-mode browser is visible instead of pretending to save.
+- **Render strategy**: full board re-render on mutation (cheap at this scale, trivially correct),
+  in-place patching for hover state (which must not disturb scroll or focus).
+- **No waste shipped**: the naive per-card closure computation and the hover re-render were both
+  removed during the build rather than left as latent cost.
+
+## Out of scope, deliberately
+
+Multiple boards, collaboration, WIP limits, comments/history, attachments, auto-sorting, SVG
+dependency arrows, mobile-app parity, light mode, and a service worker. All remain data-compatible
+with the current schema.
