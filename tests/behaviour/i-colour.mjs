@@ -261,7 +261,10 @@ export default {
         const hits = await ctx.page.evaluate(() => window.__okBlueSweep());
         await ctx.release("d");
 
-        const allowed = (hit) => BLUE_ALLOW.some((entry) => hit.element.includes(entry.match));
+        // Matched by exact class token, not by substring: `.ref-downward` must not
+        // inherit the allowance its neighbour earned.
+        const allowed = (hit) =>
+          BLUE_ALLOW.some((entry) => hit.element.split(".").slice(1).includes(entry.match.slice(1)));
         const backgrounds = hits.filter((hit) => hit.region === "background");
         const stray = hits.filter((hit) => hit.region !== "background" && !allowed(hit));
         const sanctioned = hits.filter(allowed);

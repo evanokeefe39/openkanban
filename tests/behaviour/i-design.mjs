@@ -199,8 +199,6 @@ export default {
           colHead: sel.columnHead(SEED.columns[0]),
           button: sel.btnExport,
           dialog: sel.settingsDialog,
-          plate: sel.plates,
-          toast: sel.toasts_,
           colAdd: "#board [data-add-to]",
         };
         const radii = {};
@@ -221,11 +219,37 @@ export default {
           const node = document.querySelector("#board .chip.prio");
           return node ? getComputedStyle(node).borderRadius : null;
         });
-        // a plate only exists on an empty column — the fresh board has none. When it
-        // is absent the subject is reported as null and simply not asserted; when it
-        // is present it is asserted like everything else.
-        const all = Object.entries(radii).every(([, v]) => v === null || v === "0px");
-        return ok(all && tick === "0px" && prio === "0px", { radii, tick, prioritySwatch: prio });
+
+        // An empty-column plate and a toast only exist in states the fresh board is
+        // not in. Both were previously measured as `null` and skipped — a subject
+        // that is absent is never asserted, so an 8px radius on either passed
+        // forever. Establish the states instead of tolerating the absence: empty the
+        // board for the plate, and ask for a card with no title for the toast.
+        const radiusOf = (selector) =>
+          page.evaluate((q) => {
+            const node = document.querySelector(q);
+            return node ? getComputedStyle(node).borderRadius : null;
+          }, selector);
+
+        await ctx.resetBoard();
+        await ctx.waitFrames();
+        radii.plate = await radiusOf(sel.plates);
+        await ctx.freshBoard();
+        await page.click(sel.addButton(SEED.columns[0]));
+        await page.fill(sel.addFormInput, "   ");
+        await ctx.press("Enter");
+        await ctx.waitFor((s) => document.querySelectorAll(s).length > 0, sel.toasts_);
+        await ctx.waitFrames();
+        radii.toast = await radiusOf(sel.toasts_);
+
+        // A subject that never resolved is a failure, not a pass: this is the whole
+        // reason the two above were moved into states where they exist.
+        const missing = Object.entries(radii).filter(([, value]) => value === null).map(([name]) => name);
+        const rounded = Object.entries(radii).filter(([, value]) => value !== null && value !== "0px");
+        return ok(
+          missing.length === 0 && rounded.length === 0 && tick === "0px" && prio === "0px",
+          { radii, missing, rounded, tick, prioritySwatch: prio }
+        );
       },
     },
     {

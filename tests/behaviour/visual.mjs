@@ -37,9 +37,15 @@ const VIEWPORTS = [
  * Frozen on the first green run. A pixel counts as differing only when its
  * largest per-channel delta exceeds CHANNEL_TOLERANCE; differing pixels must
  * then stay under RATIO_TOLERANCE of the frame.
+ *
+ * The env overrides exist for calibration, not for passing: widening either past
+ * the frozen default fails the summary row, because "the bar had to be widened"
+ * is the finding this comparison is here to produce.
  */
-const CHANNEL_TOLERANCE = Number(process.env.OK_VISUAL_CHANNEL_TOLERANCE) || 24;
-const RATIO_TOLERANCE = Number(process.env.OK_VISUAL_RATIO_TOLERANCE) || 0.02;
+const FROZEN = { channel: 24, ratio: 0.02 };
+const CHANNEL_TOLERANCE = Number(process.env.OK_VISUAL_CHANNEL_TOLERANCE) || FROZEN.channel;
+const RATIO_TOLERANCE = Number(process.env.OK_VISUAL_RATIO_TOLERANCE) || FROZEN.ratio;
+const WIDENED = CHANNEL_TOLERANCE > FROZEN.channel || RATIO_TOLERANCE > FROZEN.ratio;
 
 const STATES = [
   {
@@ -259,8 +265,22 @@ export async function compareViews(browser, { vanilla, react, vCtx, rCtx }) {
   rows.push({
     id: "visual-summary",
     name: `the visual comparison ran in ${Date.now() - started} ms`,
-    status: "pass",
-    detail: JSON.stringify({ comparisons: rows.length, viewports: VIEWPORTS.map((v) => v.id), states: STATES.map((s) => s.id) }),
+    // A tolerance that had to be widened is a finding, not a setting. An env
+    // override above the frozen default therefore fails this row rather than
+    // quietly producing a green run that only reading the detail would explain.
+    status: WIDENED ? "fail" : "pass",
+    detail: JSON.stringify({
+      comparisons: rows.length,
+      viewports: VIEWPORTS.map((v) => v.id),
+      states: STATES.map((s) => s.id),
+      tolerance: { channel: CHANNEL_TOLERANCE, ratio: RATIO_TOLERANCE },
+      frozen: FROZEN,
+      widened: WIDENED
+        ? `a tolerance was widened past the frozen default — ${
+            CHANNEL_TOLERANCE > FROZEN.channel ? `channel ${CHANNEL_TOLERANCE} > ${FROZEN.channel}` : ""
+          } ${RATIO_TOLERANCE > FROZEN.ratio ? `ratio ${RATIO_TOLERANCE} > ${FROZEN.ratio}` : ""}`.trim()
+        : null,
+    }),
     ms: Date.now() - started,
   });
   return rows;

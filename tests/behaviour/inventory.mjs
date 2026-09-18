@@ -127,7 +127,7 @@ export const REQUIRED = {
 
 /**
  * Checks that assert a behaviour the **reference app does not have**, with the
- * reason. Verified defects only.
+ * reason and the target(s) the defect is excused on.
  *
  * An entry here does not weaken an assertion: the check still asserts the
  * documented invariant and still fails on any target that does not meet it. What
@@ -135,34 +135,50 @@ export const REQUIRED = {
  * permanently red vanilla gate and loosening the assertion until it passes —
  * and loosening it is how a suite stops being able to fail.
  *
- * Every entry is printed on every run with its reason, so a declared defect
- * cannot rot into an assumption. Anything not listed here fails the run. Adding
- * an id is a decision, and it has to name a defect, not a test that needs
- * adjusting.
+ * `targets` is not decoration. Both defects below are in the **frozen vanilla
+ * reference**, so the vanilla target carries them; the React target must fix
+ * them, and this register deliberately does not excuse it there. Without that
+ * qualifier the port could inherit the 375px overflow and the sub-AA labels and
+ * still pass its own gate — which is the exact hole the register exists to avoid.
  *
  * Keyed by **check id**, not by feature: a feature with two checks must be able
  * to carry one declared defect without exempting the other, or the exemption
  * would mask a fresh regression in the check that was passing.
+ *
+ * Every entry is printed on every run with its reason and its targets, so a
+ * declared defect cannot rot into an assumption. Anything not listed here fails
+ * the run. Adding an id is a decision, and it has to name a defect, not a test
+ * that needs adjusting.
  */
 export const KNOWN_DEFECTS = {
-  "i-design-08":
-    "at 375px the page really does scroll sideways (89px), because an absolutely-positioned " +
-    ".visually-hidden span inside the toolbar's horizontally-scrolling strip has no positioned " +
-    "ancestor, so it escapes the strip's clip and extends the document. Measured two ways — " +
-    "documentElement.scrollWidth 464 against a 375 viewport, and window.scrollTo(400,0) leaving " +
-    "scrollX at 89 — see ISSUES.md. The check asserts the documented invariant (page-level " +
-    "horizontal scroll is 0), so it stays red until the port fixes the CSS; the fix is one line " +
-    "and belongs in Phase 3 with the token port.",
-
-  "i-colour-05":
-    "three 10px muted labels sit below the 4.5:1 the project applies to every other label of their " +
-    "kind: `.col-hidden` (the +N HIDDEN badge) at 4.17, `.drawer-kicker` at 4.04 and `.field-label` " +
-    "at 4.17, all three on #6b7280 (`--color-foreground-muted`). The sweep recorded in " +
-    "openkanban-mvp.md moved + ADD CARD, the counters, the filter group names, the ticket number and " +
-    "the storage lamp from muted to secondary for exactly this reason and did not reach these three. " +
-    "Measured against the composited background, so the numbers hold on both the page fill and the " +
-    "drawer header's subtle fill. See ISSUES.md.",
+  "i-design-08": {
+    targets: ["vanilla"],
+    reason:
+      "at 375px the page really does scroll sideways (89px), because an absolutely-positioned " +
+      ".visually-hidden span inside the toolbar's horizontally-scrolling strip has no positioned " +
+      "ancestor, so it escapes the strip's clip and extends the document. Measured two ways — " +
+      "documentElement.scrollWidth 464 against a 375 viewport, and window.scrollTo(400,0) leaving " +
+      "scrollX at 89 — see ISSUES.md. Carried on the vanilla reference because changing styles.css " +
+      "mid-port would invalidate the comparison; the port must not inherit it, so it is red there.",
+  },
+  "i-colour-05": {
+    targets: ["vanilla"],
+    reason:
+      "three 10px muted labels sit below the 4.5:1 the project applies to every other label of their " +
+      "kind: `.col-hidden` (the +N HIDDEN badge) at 4.17, `.drawer-kicker` at 4.04 and `.field-label` " +
+      "at 4.17, all three on #6b7280 (`--color-foreground-muted`). The sweep recorded in " +
+      "openkanban-mvp.md moved + ADD CARD, the counters, the filter group names, the ticket number and " +
+      "the storage lamp from muted to secondary for exactly this reason and did not reach these three. " +
+      "Measured against the composited background, so the numbers hold on both the page fill and the " +
+      "drawer header's subtle fill. Carried on the vanilla reference; the port must move them.",
+  },
 };
+
+/** The reason a check may be excused on this target, or null if it may not. */
+export function knownDefectFor(checkId, targetId) {
+  const entry = KNOWN_DEFECTS[checkId];
+  return entry && entry.targets.includes(targetId) ? entry.reason : null;
+}
 
 /**
  * Features only one app can express, and why.

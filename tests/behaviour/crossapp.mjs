@@ -19,22 +19,148 @@ import { REQUIRED_CROSS } from "./inventory.mjs";
 import { sel } from "./dom.mjs";
 import * as H from "./harness.mjs";
 
-/** The state contract, harvested from the rendered DOM rather than from source. */
-const DOM_CONTRACT_PROBE = () => {
+/**
+ * The state contract, harvested from the rendered DOM rather than from source.
+ *
+ * Deliberately scoped to what `dom.mjs` declares rather than to every id and
+ * attribute present, because the port's contract is that it *exposes the same
+ * contract*, not that it emits the identical DOM. A behaviour-preserving React
+ * app may add a wrapper id, an `aria-*` attribute or a hydration marker, and a
+ * check that failed on those would be made green by loosening it — at which
+ * point it proves nothing. So this asserts the declared surface is present and
+ * its values agree; anything the port adds is reported as evidence, not as a
+ * failure.
+ *
+ * The ids below are the ones `dom.mjs`'s `sel` table addresses, which is the
+ * reviewable list. The attributes are the state contract from that file's table.
+ */
+export const CONTRACT_IDS = [
+  "board",
+  "counters",
+  "board-name",
+  "storage-lamp",
+  "storage-lamp-text",
+  "filter-toggle",
+  "filter-count",
+  "filter-query",
+  "prio-legend",
+  "deps-indicator",
+  "btn-export",
+  "btn-import",
+  "btn-settings",
+  "btn-reset",
+  "empty-prompt",
+  "empty-sample",
+  "filter-panel",
+  "selection-bar",
+  "selection-count",
+  "selection-targets",
+  "selection-clear",
+  "card-dialog",
+  "card-kicker",
+  "card-close",
+  "card-title",
+  "card-notes",
+  "card-due",
+  "card-due-clear",
+  "card-priority",
+  "card-labels",
+  "card-label-input",
+  "card-label-add",
+  "card-blockers",
+  "card-blocker-input",
+  "card-blocker-picker",
+  "card-blocks",
+  "card-move",
+  "card-meta",
+  "card-delete",
+  "settings-dialog",
+  "settings-close",
+  "settings-name",
+  "settings-columns",
+  "settings-add-column",
+  "settings-density",
+  "settings-view",
+  "settings-storage",
+  "settings-export",
+  "settings-import",
+  "settings-reset",
+  "settings-sample",
+  "confirm-dialog",
+  "confirm-title",
+  "confirm-text",
+  "confirm-ok",
+  "confirm-cancel",
+  "reset-dialog",
+  "reset-summary",
+  "reset-word",
+  "reset-ok",
+  "reset-cancel",
+  "import-input",
+  "toasts",
+];
+
+/**
+ * The state attributes `dom.mjs` declares, as `[selector, attribute]`, grouped by
+ * the state that makes the selector exist. A filter chip only exists while a
+ * filter is applied and a settings input only while the drawer is open, so a
+ * single probe on the fresh board reported those as absent — which is how a
+ * declared attribute becomes an unchecked one. Each group is probed in its own
+ * pass, and both apps are driven into that state first.
+ */
+export const CONTRACT_STATE = {
+  base: [
+    ["#board .card", "data-card-id"],
+    ["#board .card", "data-blocked"],
+    ["#board .card", "data-prio"],
+    ["#board .column", "data-column-id"],
+    ["#board [data-add-to]", "data-add-to"],
+  ],
+  filtered: [["#filter-panel button[data-filter-key]", "data-filter-key"]],
+  settings: [
+    ["#settings-view input", "data-view"],
+    ["#settings-density button", "data-density"],
+  ],
+};
+
+export const DOM_CONTRACT_PROBE = ([contractIds, stateGroup]) => {
   const html = document.documentElement;
   const cards = [...document.querySelectorAll("#board .card")];
   const columns = [...document.querySelectorAll("#board .column")];
   const nodes = [html, document.body, ...columns, ...cards, ...document.querySelectorAll("dialog")];
-  const attributes = new Set();
+
+  const present = Object.fromEntries(
+    contractIds.map((id) => [id, document.getElementById(id) !== null])
+  );
+  // `there` and `has` are kept apart so "the selector is absent" and "the
+  // attribute is missing" are different findings rather than one null.
+  const stateAttributes = stateGroup.map(([selector, attribute]) => {
+    const node = document.querySelector(selector);
+    return {
+      key: `${selector}@${attribute}`,
+      there: node !== null,
+      has: node ? node.hasAttribute(attribute) : null,
+    };
+  });
+
+  // everything on the page, reported as evidence of what each app adds
+  const vocabulary = new Set();
   for (const node of nodes) {
     for (const name of node.getAttributeNames()) {
-      if (name.startsWith("data-") || name.startsWith("aria-")) attributes.add(name);
+      if (name.startsWith("data-") || name.startsWith("aria-")) vocabulary.add(name);
     }
   }
+  const extraIds = [...document.querySelectorAll("[id]")]
+    .map((node) => node.id)
+    .filter((id) => !contractIds.includes(id))
+    .sort();
+
   return {
+    present,
+    stateAttributes,
+    vocabulary: [...vocabulary].sort(),
+    extraIds,
     htmlKeys: Object.keys(html.dataset).sort(),
-    elementIds: [...document.querySelectorAll("[id]")].map((node) => node.id).sort(),
-    attributes: [...attributes].sort(),
     dialogIds: [...document.querySelectorAll("dialog")].map((node) => node.id).sort(),
     columnIds: columns.map((node) => node.dataset.columnId),
     cardIds: cards.map((node) => node.dataset.cardId),
@@ -45,6 +171,29 @@ const DOM_CONTRACT_PROBE = () => {
     boardName: document.getElementById("board-name")?.textContent ?? null,
   };
 };
+
+/**
+ * Structural equality for a stored document.
+ *
+ * The port's contract is that the *document* survives, not that it is spelled
+ * the same. Comparing `JSON.stringify` output would fail a correct port whose
+ * object keys happen to be written in a different order — a difference no
+ * consumer can observe, and exactly the kind of assertion that gets loosened to
+ * something that proves nothing. Values are compared exactly; order is not.
+ */
+function deepEqual(left, right) {
+  if (left === right) return true;
+  if (typeof left !== typeof right || left === null || right === null) return false;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
+    return left.every((item, index) => deepEqual(item, right[index]));
+  }
+  if (typeof left !== "object") return false;
+  const leftKeys = Object.keys(left).sort();
+  const rightKeys = Object.keys(right).sort();
+  if (leftKeys.length !== rightKeys.length) return false;
+  return leftKeys.every((key, index) => key === rightKeys[index] && deepEqual(left[key], right[key]));
+}
 
 /** Build a board through the UI, so the payload under test is a real one. */
 async function composeBoard(ctx) {
@@ -119,7 +268,7 @@ export async function runCrossApp(browser, { visual = false, mode = "gate" } = {
         const counters = await rCtx.counters();
         const warned = (await rCtx.toasts()).some((t) => /REPAIRED|UNREADABLE|RESET/.test(t.text));
         return H.ok(
-          JSON.stringify(after) === JSON.stringify(before) &&
+          deepEqual(after, before) &&
             Object.keys(before.cards).length === 12 &&
             rendered.length === 12 &&
             /12 CARDS/.test(counters) &&
@@ -129,6 +278,7 @@ export async function runCrossApp(browser, { visual = false, mode = "gate" } = {
             cardsRendered: rendered.length,
             counters,
             warned,
+            identicalByValue: deepEqual(after, before),
           }
         );
       }
@@ -143,7 +293,7 @@ export async function runCrossApp(browser, { visual = false, mode = "gate" } = {
         const after = await vCtx.storedBoard();
         const rendered = await vCtx.cards();
         return H.ok(
-          !!after && JSON.stringify(after) === JSON.stringify(before) && rendered.length === 12,
+          !!after && deepEqual(after, before) && rendered.length === 12,
           {
             cardsWritten: Object.keys(before.cards).length,
             cardsRendered: rendered.length,
@@ -157,12 +307,75 @@ export async function runCrossApp(browser, { visual = false, mode = "gate" } = {
     await attempt(
       check("cross-04", "J4", "both apps expose the same state contract"),
       async () => {
-        await vCtx.freshBoard();
-        await rCtx.freshBoard();
-        const a = await vanilla.page.evaluate(DOM_CONTRACT_PROBE);
-        const b = await react.page.evaluate(DOM_CONTRACT_PROBE);
-        const missingIds = a.elementIds.filter((id) => !b.elementIds.includes(id));
-        const missingAttrs = a.attributes.filter((name) => !b.attributes.includes(name));
+        // Three passes, because two of the declared attributes only exist in a
+        // state: a filter chip needs a filter, a settings input needs the drawer.
+        // Each pass drives both apps into that state and asserts that pass's group,
+        // so "the selector was absent" is a failure and not a silent null.
+        const passes = [
+          {
+            name: "base",
+            group: CONTRACT_STATE.base,
+            prepare: async (ctx) => {
+              await ctx.freshBoard();
+            },
+          },
+          {
+            name: "filtered",
+            group: CONTRACT_STATE.filtered,
+            prepare: async (ctx) => {
+              await ctx.freshBoard();
+              await ctx.openFilters();
+              await ctx.page.fill(sel.filterQuery, "graph");
+              await ctx.waitFrames();
+            },
+          },
+          {
+            name: "settings",
+            group: CONTRACT_STATE.settings,
+            prepare: async (ctx) => {
+              await ctx.freshBoard();
+              await ctx.openSettings();
+            },
+          },
+        ];
+
+        const missingIds = [];
+        const missingState = [];
+        let base = null;
+
+        for (const pass of passes) {
+          await pass.prepare(vCtx);
+          await pass.prepare(rCtx);
+          const [a, b] = await Promise.all([
+            vanilla.page.evaluate(DOM_CONTRACT_PROBE, [CONTRACT_IDS, pass.group]),
+            react.page.evaluate(DOM_CONTRACT_PROBE, [CONTRACT_IDS, pass.group]),
+          ]);
+          if (pass.name === "base") base = { a, b };
+          for (const [side, probe] of [
+            ["vanilla", a],
+            ["react", b],
+          ]) {
+            missingIds.push(
+              ...Object.entries(probe.present)
+                .filter(([, there]) => !there)
+                .map(([id]) => `${id} (${side}/${pass.name})`)
+            );
+            missingState.push(
+              ...probe.stateAttributes
+                .filter((entry) => entry.there !== true || entry.has !== true)
+                .map(
+                  (entry) =>
+                    `${entry.key} (${side}/${pass.name}) — selector ${
+                      entry.there ? "present" : "ABSENT"
+                    }, attribute ${entry.has ? "present" : "MISSING"}`
+                )
+            );
+          }
+        }
+
+        // The values that carry the state contract, compared on the same pass so
+        // the board they describe is the same board.
+        const { a, b } = base;
         const drifted = [
           ["counters", a.counters, b.counters],
           ["board name", a.boardName, b.boardName],
@@ -176,10 +389,14 @@ export async function runCrossApp(browser, { visual = false, mode = "gate" } = {
         ]
           .filter(([, left, right]) => left !== right)
           .map(([what, left, right]) => `${what}: ${left} ≠ ${right}`);
-        return H.ok(!missingIds.length && !missingAttrs.length && !drifted.length, {
-          missingIds: missingIds.slice(0, 12),
-          missingAttributes: missingAttrs.slice(0, 12),
+
+        return H.ok(!missingIds.length && !missingState.length && !drifted.length, {
+          missingIds,
+          missingState,
           drifted,
+          // evidence, not failures: what the port carries beyond the contract
+          addedIds: b.extraIds.slice(0, 12),
+          addedVocabulary: b.vocabulary.filter((name) => !a.vocabulary.includes(name)),
         });
       }
     );

@@ -7,7 +7,7 @@
     "serve": "node tools/serve.mjs",
     "dev": "next dev",
     "build": "next build",
-    "check": "node --check app.js && node --check tests/smoke.mjs && node --check tests/run-behaviour.mjs && node --check tests/behaviour/harness.mjs && node --check tests/behaviour/index.mjs && node --check tests/behaviour/crossapp.mjs && node --check tests/behaviour/visual.mjs && node --check tools/serve.mjs && node tests/check-styles.mjs",
+    "check": "node tests/check-syntax.mjs && node tests/check-styles.mjs",
     "test": "node tests/smoke.mjs",
     "behaviour": "node tests/run-behaviour.mjs --target vanilla",
     "behaviour:react": "node tests/run-behaviour.mjs --target react --mode report",

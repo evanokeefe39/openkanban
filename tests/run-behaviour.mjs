@@ -33,6 +33,7 @@ import {
   LEGACY,
   FEATURE_CAPABILITY,
   KNOWN_DEFECTS,
+  knownDefectFor,
 } from "./behaviour/inventory.mjs";
 import { supports, CAPABILITIES } from "./behaviour/capabilities.mjs";
 import * as H from "./behaviour/harness.mjs";
@@ -237,10 +238,18 @@ async function runTarget(browser, targetId, options) {
         continue;
       }
       const row = await runOne(session, check, options, shotBudget);
-      // A check that failed may be asserting a behaviour the reference app is
-      // known not to have. The assertion is not touched; the gate is. It is
-      // printed every run so a declared defect cannot become an assumption.
-      if (row.status === "fail" && check.id in KNOWN_DEFECTS) row.status = "known-defect";
+      // A check that failed may be asserting a behaviour this target is known not
+      // to have. The assertion is not touched; the gate is. The register is
+      // target-qualified, so a defect carried by the frozen vanilla reference is
+      // still a failure on the port — which is the point of carrying it.
+      const declared = row.status === "fail" ? KNOWN_DEFECTS[check.id] : null;
+      const excuse = declared ? knownDefectFor(check.id, targetId) : null;
+      if (excuse) {
+        row.status = "known-defect";
+        row.defectReason = excuse;
+      } else if (declared) {
+        row.defectDeclaredFor = declared.targets;
+      }
       summary.results.push(row);
     }
   } finally {
@@ -368,6 +377,11 @@ function printTarget(summary, options) {
       console.log(`  ${suite}`);
     }
     const detail = loud.has(row.status) || options.verbose ? `  ${row.detail}` : "";
+    if (row.defectDeclaredFor) {
+      console.log(
+        `           ^ declared defect, but only for ${row.defectDeclaredFor.join(", ")} — this target must not inherit it`
+      );
+    }
     console.log(`    ${MARK[row.status]} ${row.feature.padEnd(4)} ${row.name}${detail}`);
   }
 
@@ -382,7 +396,8 @@ function printTarget(summary, options) {
   if (declared.length) {
     console.log(`\ndeclared defects — these checks assert the CORRECT behaviour and are red because the app does not:`);
     for (const row of declared) {
-      console.log(`  ${row.id}  (${row.feature}) — ${KNOWN_DEFECTS[row.id]}`);
+      console.log(`  ${row.id}  (${row.feature}) — carried on ${KNOWN_DEFECTS[row.id].targets.join(", ")}`);
+      console.log(`      ${KNOWN_DEFECTS[row.id].reason}`);
     }
   }
 
@@ -488,11 +503,13 @@ async function main() {
   let failed = false;
   let notRun = false;
   let uncovered = false;
+  let scoped = false;
   for (const summary of summaries) {
     const counts = printTarget(summary, options);
     if (counts.fail || counts.error) failed = true;
     if (counts["not-run"]) notRun = true;
     const ledger = summary.ledger;
+    if (ledger && ledger.scoped) scoped = true;
     // a scoped run cannot judge coverage: it deliberately looked at a subset
     if (ledger && ledger.evaluated && !ledger.scoped && (ledger.missing.length || ledger.legacyUncovered.length)) {
       uncovered = true;
@@ -520,6 +537,19 @@ async function main() {
   if (failed || notRun || uncovered) {
     console.log("GATE FAILED — see the failures above and tests/.artifacts/ for screenshots.");
     return 1;
+  }
+  if (scoped) {
+    // The line CI logs and humans quote. A selection that held says nothing about
+    // the ids it never looked at, so it must not borrow the full gate's sentence.
+    const selected = summaries.reduce(
+      (sum, s) => sum + (s.ledger?.scoped ? s.ledger.covered : 0),
+      0
+    );
+    console.log(
+      `SCOPED GATE PASSED — ${selected} selected feature id(s) held. This is not the full gate: ` +
+        `run without --only to judge coverage.`
+    );
+    return 0;
   }
   console.log("GATE PASSED — every required behaviour ran on every target and held.");
   return 0;
