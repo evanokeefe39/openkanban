@@ -34,6 +34,9 @@
   --line: rgba(255, 255, 255, 0.1);
   --line-strong: rgba(255, 255, 255, 0.16);
   --col-bg: #0d0b13;
+  /* column header: "ink black" teal, per the user's call — deliberately a different temperature
+     from the column body it caps, so the header reads as a band rather than a tint */
+  --col-head-bg: #00181f;
   /* card surface: warm "coffee bean" against the cool column and panel surfaces, per the user's
      call — the priority tints below mix into this value, so they follow it automatically */
   --card-bg: #1f1819;
@@ -643,7 +646,7 @@ button.chip[aria-pressed='true']:hover {
   align-items: center;
   gap: 7px;
   padding: var(--density-head-pad);
-  background: var(--color-surface);
+  background: var(--col-head-bg);
   border-bottom: 1px solid var(--line);
 }
 .col-name {
@@ -692,8 +695,9 @@ button.chip[aria-pressed='true']:hover {
   position: absolute;
   inset: -8px;
 }
+/* a white lift rather than a fixed surface colour, so the hover reads as raised on any header hue */
 .col-add:hover {
-  background: var(--color-surface-elevated);
+  background: rgba(255, 255, 255, 0.09);
   color: var(--ivory);
   border-color: var(--line-strong);
 }

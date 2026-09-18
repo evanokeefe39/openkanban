@@ -48,6 +48,12 @@ labels all shipped, plus the dependency graph that no option mentioned.
   from `--card-bg`, so all three followed the change without retuning. Measured consequence: the card
   now sits 23 RGB from the column instead of 28 — a slightly quieter separation the audits noticed
   too — and P1's orange rail reads less vivid against a warm surface than it did against navy.
+  The **column header is the second exception** (user-directed): `#00181f`, an "ink black" teal that
+  caps the navy column body as a band rather than a tint. Measured on it: name and count 14.9:1, the
+  hidden counter 7.2:1, header-to-body separation 22 RGB. Every column has its own temperature now —
+  teal band, navy column, coffee card — and both audits read the set as deliberate rather than
+  patchy, with the caveat that it is close to the edge: three dark, low-saturation hues shifting
+  within one screen is a lot, and the next accent added should not be a fourth.
 - **Signature**: the board is a wiring diagram — hovering a card lights its upstream chain (amber)
   and downstream chain (indigo). Column headers carry only the name, the hit count and the add
   button; no status lamp and no colour swatch beside a name. Colour is reserved for meaning that
@@ -252,12 +258,12 @@ Verification tally — the runs, each counted once, summing to the total:
 20 view options, 5 rail and tint geometry, 22 consolidated regression, 5 keyboard and pane scoping,
 14 icons + popover (first pass), 21 icons + popover + numbers + hold-D (after the fixes),
 8 numbering/migration/edge semantics, 10 regression over the new features, 4 hover-ring semantics,
-7 regression over the card surface change.
-**309 assertions across 18 runs.**
+7 regression over the card surface change, 7 column-header checks.
+**316 assertions across 20 runs.**
 
-Twenty-eight failed on first pass. Two were real product defects, both found by a test rather than
+Thirty failed on first pass. Two were real product defects, both found by a test rather than
 by review, both fixed: the icon CDN executing nothing (defect 11) and a chip click dismissing the
-pane (defect 12). The other twenty-six were the test being wrong, and they are worth listing because
+pane (defect 12). The other twenty-eight were the test being wrong, and they are worth listing because
 each one is a repeatable way to lie to yourself about a UI: guessing a count or a set instead of
 deriving it from the store; asserting a computed colour that `display:none` does not change; reading
 a colour through the `background` shorthand, which canvas cannot parse and silently renders black;
@@ -268,7 +274,11 @@ children before the pane was open; holding a chip node across the re-render that
 dispatching a synthetic key event on `document` when the handler is scoped to another element;
 testing a hover on a card a filter had hidden; a wrong column id; and three fixtures where the
 "blocked" card's blocker sat in a DONE column, so the card was legitimately unblocked.
-Every one was re-run in corrected form and passed.
+Every one was re-run in corrected form and passed. Three further patterns from the last runs are
+worth naming because they recurred in the same session: passing `Array.map` a helper that takes a
+property name, so the index becomes the property and the colour reads black; letting a measurement
+helper lose its default property, which fails the same silent way; and reconstructing a screenshot's
+file name from memory instead of reading the path the tool returned.
 
 Two further defects (13, 14) were never test failures: they were caught by measuring contrast after
 a colour change and by a vision audit reading one value as two meanings. Both are fixed and both now
@@ -431,6 +441,12 @@ that DONE was narrower; measurement shows five × 268px and zero card/chip overf
     separation is now 23 RGB rather than 28, and the cool chips on a warm card are the one place the
     two temperatures touch. If the warmth is kept, the next candidates are the chip surface and the
     column background; nothing else depends on the card's hue.
+20. **The column header is its own token, not a reuse of the panel surface** (user-directed,
+    `#00181f`). It was `--color-surface`, which would have dragged the whole indigo panel family teal
+    if changed in place; a separate `--col-head-bg` keeps the change to the one band. The add
+    button's hover moved from a fixed elevated-surface colour to a white overlay lift, because a navy
+    patch on a teal header reads as a glitch rather than a hover — the same reasoning that produced
+    the derived card hover lift.
 
 ## Reasoning trace
 
