@@ -178,6 +178,10 @@
   let view = { ...DEFAULT_VIEW };
   let lastWritten = null;
   let lastWriteTime = null;
+  // Where the current board came from, so the UI can say it: 'sample' for the seeded board,
+  // 'storage' for one restored from localStorage, 'import' for a file the user opened. Undefined
+  // until boot decides, and cleared to null once the board is edited into something of the user's own.
+  let boardOrigin = null;
   let writeErrorStreak = false;
 
   const ui = {
@@ -551,6 +555,8 @@
 
   function commit(mutate) {
     mutate();
+    // the moment anything changes, the board is the user's own work and no longer "the sample"
+    boardOrigin = null;
     saveBoard();
     render();
   }
@@ -940,6 +946,8 @@
     $('counters').textContent = parts.join('  ·  ');
     $('prio-legend').hidden = !all.some((c) => c.priority > 0);
     $('btn-reset').disabled = all.length === 0;
+    const settingsReset = $('settings-reset');
+    if (settingsReset) settingsReset.disabled = all.length === 0;
   }
 
   /**
@@ -1101,11 +1109,11 @@
       visible += column.cardIds.filter((id) => card(id) && matchesFilter(card(id))).length;
     }
 
-    if (!visible) {
-      const total = Object.keys(board.cards).length;
-      host.appendChild(
-        el('p', 'plate', total === 0 ? 'NO CARDS — USE + ADD CARD IN ANY COLUMN' : 'NO CARDS MATCH THE FILTER')
-      );
+    if (!visible && Object.keys(board.cards).length) {
+      // an empty board needs no plate: every column already offers "+ ADD CARD". A board whose
+      // cards are all hidden by the filter is the case that needs saying, since nothing on screen
+      // explains the absence.
+      host.appendChild(el('p', 'plate', 'NO CARDS MATCH THE FILTER'));
     }
 
     if (focusedCardId) {
@@ -1613,6 +1621,12 @@
     }
   }
 
+  const ORIGIN_LABEL = {
+    sample: 'SAMPLE BOARD (seeded, not yet edited)',
+    storage: 'RESTORED FROM STORAGE',
+    import: 'IMPORTED FROM A FILE',
+  };
+
   function renderStorageInfo() {
     let bytes = null;
     try {
@@ -1623,6 +1637,8 @@
     }
     const lampState = $('storage-lamp').dataset.state || 'ready';
     $('settings-storage').textContent = [
+      `BOARD  ${ORIGIN_LABEL[boardOrigin] || 'EDITED IN THIS BROWSER'}`,
+      `CARDS  ${Object.keys(board.cards).length}`,
       `KEY  ${STORAGE_KEY}`,
       `VIEW  ${VIEW_KEY}`,
       bytes === null ? 'SIZE  UNAVAILABLE' : `SIZE  ${bytes.toLocaleString()} BYTES`,
@@ -1695,8 +1711,38 @@
       // to point at, so the next card is #1 again.
       board.nextNumber = 1;
     });
+    boardOrigin = null;
     $('reset-dialog').close();
     toast('warn', `BOARD RESET — ${removed} CARD${removed === 1 ? '' : 'S'} DELETED`, 8000);
+  }
+
+  /**
+   * Put the sample board back. Reachable when the board is empty, so an emptied board is not a dead
+   * end: without this the only route back to the sample was clearing storage by hand, which is not
+   * something a user of a board app should ever have to do.
+   */
+  function loadSampleBoard() {
+    const current = Object.keys(board.cards).length;
+    const apply = () => {
+      const sample = seedBoard();
+      commit(() => {
+        board = sample;
+      });
+      boardOrigin = 'sample';
+      ui.activeCardId = null;
+      ui.inlineAdd = null;
+      toast('info', 'SAMPLE BOARD RESTORED');
+    };
+    if (!current) {
+      apply();
+      return;
+    }
+    const body = el('div');
+    body.appendChild(
+      el('p', null, `Replace the ${current} card${current === 1 ? '' : 's'} on this board with the 11-card sample?`)
+    );
+    body.appendChild(el('p', null, 'Your columns, board name and view options are kept.'));
+    askConfirm({ title: 'LOAD SAMPLE BOARD', body, okLabel: 'REPLACE', danger: false, onOk: apply });
   }
 
   // ==========================================================================
@@ -1783,6 +1829,7 @@
       danger: false,
       onOk: () => {
         board = result.board;
+        boardOrigin = 'import';
         ui.activeCardId = null;
         ui.inlineAdd = null;
         clearFilters();
@@ -1893,6 +1940,14 @@
     $('btn-settings').addEventListener('click', () => {
       renderSettings();
       $('settings-dialog').showModal();
+    });
+    $('settings-sample').addEventListener('click', () => {
+      $('settings-dialog').close();
+      loadSampleBoard();
+    });
+    $('settings-reset').addEventListener('click', () => {
+      $('settings-dialog').close();
+      openResetDialog();
     });
     $('settings-close').addEventListener('click', () => $('settings-dialog').close());
     $('settings-dialog').addEventListener('close', () => flushSettingsFields());
@@ -2260,6 +2315,7 @@
 
     if (stored.kind === 'ok') {
       board = stored.board;
+      boardOrigin = 'storage';
       if (stored.repairs.length) {
         saveBoard();
         toast('warn', `STORED BOARD REPAIRED — ${stored.repairs.join('; ')}`, 12000);
@@ -2268,15 +2324,18 @@
       }
     } else if (stored.kind === 'empty') {
       board = seedBoard();
+      boardOrigin = 'sample';
       saveBoard();
       toast('info', 'SAMPLE BOARD LOADED — EDIT IT OR DELETE THE CARDS');
     } else if (stored.kind === 'unavailable') {
       board = seedBoard();
+      boardOrigin = 'sample';
       setLamp('error', stored.reason);
       toast('error', `STORAGE UNAVAILABLE (${stored.reason}) — WORK IS IN MEMORY ONLY`, 15000);
     } else {
       const kept = quarantine(stored.raw);
       board = seedBoard();
+      boardOrigin = 'sample';
       saveBoard();
       toast(
         'error',

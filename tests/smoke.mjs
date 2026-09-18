@@ -406,6 +406,58 @@ async function run() {
     const afterReload = await counts(page);
     check("the reset board survives a reload instead of re-seeding", afterReload.cards === 0, JSON.stringify(afterReload));
 
+    // the emptied board must not be a dead end: the sample is reachable from the UI, not just by
+    // clearing storage by hand. It lives in settings — the board area carries no such control.
+    const onBoard = await page.evaluate(() => ({
+      sampleControl: !!document.querySelector("#board #load-sample"),
+      text: /LOAD SAMPLE/.test(document.querySelector("main").textContent),
+      // the per-column "+ ADD CARD" plates are not board-level plates; only a bare .plate reaches
+      // the board host itself
+      boardPlates: [...document.querySelectorAll("#board > .plate")].map((p) => p.textContent.trim()),
+    }));
+    check(
+      "an empty board offers no sample control in the board area",
+      !onBoard.sampleControl && !onBoard.text && onBoard.boardPlates.length === 0,
+      JSON.stringify(onBoard)
+    );
+
+    await page.click("#btn-settings");
+    await page.waitForFunction(() => document.getElementById("settings-dialog").open === true);
+    const origin = await page.textContent("#settings-storage");
+    check(
+      "settings reports where the board came from and how many cards it holds",
+      /CARDS {2}0\b/.test(origin) && !/SAMPLE BOARD \(/.test(origin),
+      JSON.stringify(origin.slice(0, 90))
+    );
+
+    const dividers = await page.evaluate(() =>
+      [...document.querySelectorAll("#settings-dialog .field")].filter((f) =>
+        f.classList.contains("field-divider")
+      ).length
+    );
+    check("the settings sections are separated by dividers", dividers === 4, String(dividers));
+
+    await page.click("#settings-sample");
+    await page.waitForFunction(() => document.querySelectorAll("#board .card").length === 11);
+    const restored = await counts(page);
+    const restoredColumns = await page.evaluate(
+      () => [...document.querySelectorAll(".column")].map((c) => c.querySelectorAll(".card").length).join(",")
+    );
+    check(
+      "one click in settings restores the sample board",
+      restored.cards === 11 && restoredColumns === "2,3,4,1,1",
+      JSON.stringify({ ...restored, restoredColumns })
+    );
+
+    await page.click("#btn-settings");
+    await page.waitForFunction(() => document.getElementById("settings-dialog").open === true);
+    check(
+      "a freshly restored sample is labelled as the sample",
+      /SAMPLE BOARD/.test(await page.textContent("#settings-storage"))
+    );
+    await page.click("#settings-close");
+    await page.waitForFunction(() => document.getElementById("settings-dialog").open === false);
+
     // 12 — nothing threw along the way
     check("the page logged no errors", pageErrors.length === 0, pageErrors.join(" | "));
   } catch (error) {

@@ -176,7 +176,7 @@
           <span class="field-label">BOARD NAME</span>
           <input class="input" id="settings-name" type="text" spellcheck="false" />
         </label>
-        <div class="field">
+        <div class="field field-divider">
           <span class="field-label">LIFECYCLE STATES</span>
           <div class="col-rows" id="settings-columns"></div>
           <button class="btn" id="settings-add-column" type="button">+ ADD COLUMN</button>
@@ -185,7 +185,7 @@
             complete when resolving blockers.
           </p>
         </div>
-        <div class="field">
+        <div class="field field-divider">
           <span class="field-label">VIEW OPTIONS</span>
           <span class="sub-label">DENSITY</span>
           <div class="seg" id="settings-density" role="group" aria-label="Card density"></div>
@@ -196,13 +196,32 @@
           </p>
         </div>
 
-        <div class="field">
+        <div class="field field-divider">
           <span class="field-label">STORAGE</span>
           <p class="hint" id="settings-storage"></p>
-          <div class="row">
+          <div class="row" data-field-actions>
             <button class="btn" id="settings-export" type="button">EXPORT JSON</button>
             <button class="btn" id="settings-import" type="button">IMPORT JSON</button>
+            <button class="btn" id="settings-reset" type="button">RESET BOARD</button>
           </div>
+        </div>
+
+        <div class="field field-divider">
+          <span class="field-label">SAMPLE</span>
+          <div class="row" data-field-actions>
+            <button
+              class="btn"
+              id="settings-sample"
+              type="button"
+              title="Replace this board with the eleven sample cards"
+            >
+              LOAD SAMPLE BOARD
+            </button>
+          </div>
+          <p class="hint">
+            Replaces every card on this board with the eleven-card sample. Your columns, board name
+            and view options are kept.
+          </p>
         </div>
       </div>
     </dialog>
