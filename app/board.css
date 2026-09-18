@@ -1,0 +1,1503 @@
+/* ============================================================
+   OpenKanban — UNIT-02 derived design tokens
+   Source of truth: ~/repos/ambient-noise-app-v2/src/app/globals.css
+   Identity: brutalist mono instrument panel. Zero radius, hard 1px
+   rules, uppercase tracked labels, borders-only depth, no shadows.
+   ============================================================ */
+
+:root {
+  /* palette — inherited, not invented */
+  --color-background: #0a0608;
+  --color-background-subtle: #120a0c;
+  --color-foreground: #e8e8ed;
+  --color-foreground-secondary: #9ca3af;
+  --color-foreground-muted: #6b7280;
+  /* Focus is the neutral near-white, and NOT the amber accent: amber already means warning in this
+     palette (the deps indicator, the override chip), so an amber focus ring made every focused field
+     read as an error — visible first on the delete-confirmation dialog. Explicitly not --ivory
+     either, which carries a warm cast of its own; a focus ring should be past question neutral.
+     (It was indigo before the navy sweep; that was the blue it started life as, not a decision.) */
+  --color-border-focus: #e8e8ed;
+  --color-vu-green: #22c55e;
+  --color-destructive: #ef4444;
+  --color-accent: #f59e0b;
+  --ivory: #f9ffd0;
+
+  /* priority + due accents — pink / burnt orange / cream from the reference design system,
+     plus the cyan (eq band 6) reserved for "due today" so it never reads as alarm red */
+  --color-priority-p0: #f00e68;
+  --color-priority-p1: #f14f2b;
+  --color-priority-p2: #f9ffd0;
+  --color-due-today: #14b8a6;
+
+  /* derived structure */
+  --line: rgba(255, 255, 255, 0.1);
+  --line-strong: rgba(255, 255, 255, 0.16);
+  /* ink black: the filter control and the pane it opens, the modals, and the toasts. The page, the
+     cards and the sidebar are the other three surfaces — the bar and the columns share the page's
+     own fill, so chrome is drawn by rules rather than by a change of plane. */
+  --ink-bg: #00161c;
+  /* the one hover lift, a translucent white so it reads on the page, on ink and on a card alike.
+     It replaced a navy plane (#1e1e30) that made every button in the app look like a different
+     control depending on which surface it happened to sit on. */
+  --lift: rgba(255, 255, 255, 0.06);
+  /* card surface: warm "coffee bean" against the cool ink of the chrome, per the user's call — the
+     priority tints below mix into this value, so they follow it automatically */
+  --card-bg: #1f1819;
+  /* the hover lift, measured: RGB distance ~12 from the resting card */
+  --card-bg-hover: #261f20;
+  /* recessed planes (inputs, chips, list rows) — warm dark, in the page's family rather than blue */
+  --inset-bg: #0c0909;
+
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* The arrow refs' two hues, read against the dark strip they sit on rather than the card fill:
+     amber for what a card waits on, indigo for what waits on it. */
+  --ring-amber: rgba(245, 158, 11, 0.95);
+  --ring-indigo: rgba(165, 168, 255, 0.95);
+  --ring-backing: rgba(0, 0, 0, 0.5);
+  /* The two dependency directions. Red candy cane marks what this card blocks; a solid white line
+     marks what blocks it. Only the blocking direction is striped — the contrast between a striped
+     edge and a plain one is what tells the two apart at a glance, where two coloured rings of the
+     same construction read as one treatment. */
+  --cane-blocks-a: #ef4444;
+  --cane-blocks-b: #3a1210;
+  --cane-blocked-solid: #f5f0e6;
+
+  --col-width: var(--density-col-width);
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* scrollbars — quiet, structural */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::selection {
+  background: var(--color-border-focus);
+  color: #fff;
+}
+
+:focus-visible {
+  outline: 1px solid var(--color-border-focus);
+  outline-offset: 1px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ============================================================
+   View options — density scale + card-face visibility.
+   Presentation only: gating and ordering are unaffected.
+   ============================================================ */
+:root {
+  --density-card-pad: 9px 10px 8px;
+  --density-card-gap: 8px;
+  --density-body-pad: 8px;
+  --density-title: 12px;
+  --density-col-width: 268px;
+  --density-head-pad: 7px 8px;
+  --density-meta-gap: 4px;
+  --density-meta-top: 6px;
+}
+html[data-density='normal'] {
+  --density-card-pad: 13px 14px 12px;
+  --density-card-gap: 12px;
+  --density-body-pad: 12px;
+  --density-title: 13px;
+  --density-col-width: 300px;
+  --density-head-pad: 9px 10px;
+  --density-meta-gap: 6px;
+  --density-meta-top: 8px;
+}
+
+html[data-show-priority='0'] .card::before,
+html[data-show-priority='0'] .chip.prio {
+  display: none;
+}
+html[data-show-labels='0'] .chip.label {
+  display: none;
+}
+html[data-show-due='0'] .chip.due,
+html[data-show-due='0'] .chip.due-today,
+html[data-show-due='0'] .chip.due-overdue {
+  display: none;
+}
+html[data-show-status='0'] .chip.blocked,
+html[data-show-status='0'] .chip.override,
+html[data-show-status='0'] .chip.blocks {
+  display: none;
+}
+
+/* Highlight fills are graded by chroma, not by a single mix ratio: the palette runs
+   pink -> orange -> cream, and equal mixes collapse P0 and P1 into the same dark maroon
+   (measured 5-9 RGB apart). P0 therefore takes the strongest wash so urgency still reads in
+   the fill, P1 sits in the middle, and P2 — near-desaturated cream — needs a heavy mix to
+   register at all. Cream is the binding constraint: past 38% its fill drops below AA for the
+   card text. Measured on the live board at these values, against the coffee-bean card surface of
+   rgb(31,24,25): P0 rgb(117,37,58) contrast 8.3, P1 rgb(84,42,34) contrast 9.9, P2 rgb(97,93,80)
+   contrast 5.4 — pairwise gaps 41/70/63, lifts from the surface 93/57/110, so no tier is closer
+   to the plain card than the eye can see. The mixes read the card surface from `--card-bg`, so
+   they followed the surface when it changed from navy to warm without being retuned by hand. */
+html[data-highlight-priority='1'] .card[data-prio='1'] {
+  background: color-mix(in oklab, var(--color-priority-p0) 44%, var(--card-bg));
+  border-color: color-mix(in oklab, var(--color-priority-p0) 48%, var(--line));
+}
+html[data-highlight-priority='1'] .card[data-prio='2'] {
+  background: color-mix(in oklab, var(--color-priority-p1) 28%, var(--card-bg));
+  border-color: color-mix(in oklab, var(--color-priority-p1) 48%, var(--line));
+}
+html[data-highlight-priority='1'] .card[data-prio='3'] {
+  background: color-mix(in oklab, var(--color-priority-p2) 34%, var(--card-bg));
+  border-color: color-mix(in oklab, var(--color-priority-p2) 34%, var(--line));
+}
+/* An emphasised border is the tint's way of saying "P0" and the cane's way of saying "depends" —
+   two border systems on one edge read as neither. So while a card is carrying a dependency cane
+   the tint keeps its fill and gives up its border, and the cane is drawn against the plain line
+   instead of a pale priority-coloured one at 40% alpha, which washed it out.
+   Listed per tier so the selector carries the same attribute count as the rules it overrides:
+   an equally-specific rule later in the sheet wins, but a less specific one would not. */
+html[data-highlight-priority='1'] .card[data-prio='1'][data-chain],
+html[data-highlight-priority='1'] .card[data-prio='2'][data-chain],
+html[data-highlight-priority='1'] .card[data-prio='3'][data-chain] {
+  border-color: var(--line);
+}
+
+.view-rows {
+  border: 1px solid var(--line);
+  margin-top: 10px;
+}
+.view-rows:empty {
+  display: none;
+}
+.view-row {
+  display: flex;
+  padding: 6px;
+  border-bottom: 1px solid var(--line);
+  background: var(--inset-bg);
+}
+.view-row:last-child {
+  border-bottom: 0;
+}
+.sub-label {
+  display: block;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-foreground-muted);
+  margin-bottom: 4px;
+}
+
+/* ============================================================
+   Layout — viewport fit, no page scrollbar
+   ============================================================ */
+.app {
+  display: grid;
+  /* the selection bar overlays the board rather than taking a grid row, so it needs this box as its
+     containing block */
+  position: relative;
+  /* minmax(0,1fr) stops a nowrap row from forcing the document wider than the viewport */
+  grid-template-columns: minmax(0, 1fr);
+  /* topbar, status row, then the board takes every remaining pixel — which is what makes every
+     column reach the bottom of the page rather than stopping at its last card */
+  grid-template-rows: auto auto minmax(0, 1fr);
+  height: 100dvh;
+}
+
+/* The read-out row under the bar: no border, no fill, no separator of its own — it carries the
+   overlay's hotkey and the priority key, and must not read as a second toolbar. */
+.status-row {
+  display: grid;
+  /* message | gutter | keys | gutter | legend — equal gutters keep the key cluster centred on the
+     page no matter how wide the message or the legend gets */
+  grid-template-columns: 1fr minmax(0, auto) auto minmax(0, auto) 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.row-message {
+  grid-column: 1;
+  justify-self: start;
+  display: none;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+html[data-board-empty="1"] .row-message {
+  display: flex;
+}
+.row-keys {
+  grid-column: 3;
+  justify-self: center;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.row-gutter {
+  min-width: 0;
+}
+.prio-legend {
+  grid-column: 5;
+  justify-self: end;
+}
+.row-message-text {
+  color: var(--color-foreground-muted);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line-strong);
+  background: var(--color-background);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.brand {
+  border: 1px solid var(--line-strong);
+  padding: 3px 7px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: var(--ivory);
+}
+
+.board-name {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* the title does not shrink: with the toolbar's controls on one row, a squeezed title truncated
+     to "MA…" was the first thing the eye landed on. The bar scrolls instead, and the search field
+     scales with the viewport so it gives way first. */
+  flex: 0 0 auto;
+  max-width: 34ch;
+}
+
+.counters {
+  margin: 0 0 0 8px;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-foreground-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.spacer {
+  flex: 1;
+}
+
+/* storage lamp — reflects write truth, never decoration */
+.lamp {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  /* secondary, not muted: on the carbon band the muted grey measured 3.58:1 at 10px, and this is the
+     one readout that tells you whether your work was written to storage */
+  color: var(--color-foreground-secondary);
+  white-space: nowrap;
+}
+.lamp-dot {
+  width: 7px;
+  height: 7px;
+  background: var(--color-foreground-muted);
+  display: block;
+}
+.lamp[data-state='saved'] .lamp-dot {
+  background: var(--color-vu-green);
+}
+.lamp[data-state='error'] .lamp-dot {
+  background: var(--color-destructive);
+}
+.lamp[data-state='error'] {
+  color: var(--color-destructive);
+}
+
+/* ============================================================
+   Controls
+   ============================================================ */
+.btn {
+  font-family: inherit;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-foreground-secondary);
+  background: transparent;
+  border: 1px solid var(--line);
+  padding: 5px 8px;
+  cursor: pointer;
+  transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out),
+    border-color 120ms var(--ease-out), transform 100ms var(--ease-out);
+}
+.btn:hover {
+  background: var(--lift);
+  color: var(--color-foreground);
+  border-color: var(--line-strong);
+}
+.btn:active {
+  transform: scale(0.97);
+}
+.btn[aria-pressed='true'] {
+  background: var(--ivory);
+  border-color: var(--ivory);
+  color: #000;
+}
+/* lucide icons (vendored inline SVG): sized to the caption type, inheriting the button's colour */
+.icon {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  margin-right: 6px;
+  vertical-align: -2px;
+}
+.btn.primary {
+  background: var(--ivory);
+  border-color: var(--ivory);
+  color: #000;
+  font-weight: 700;
+}
+.btn.danger {
+  color: var(--color-destructive);
+  border-color: rgba(239, 68, 68, 0.4);
+}
+.btn.danger:hover {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ff8b8b;
+  border-color: rgba(239, 68, 68, 0.7);
+}
+/* The armed state of a destructive action: filled, because this is the one button on the board that
+   deletes work, and it only reaches this state after the word has been typed. */
+.btn.danger-solid {
+  background: var(--color-destructive);
+  border-color: var(--color-destructive);
+  color: #180406;
+  font-weight: 700;
+}
+.btn.danger-solid:hover:not(:disabled) {
+  background: #ff8b8b;
+  border-color: #ff8b8b;
+  color: #180406;
+}
+.btn.danger-solid:disabled,
+.btn.danger-solid:disabled:hover {
+  background: transparent;
+  border-color: rgba(239, 68, 68, 0.28);
+  color: rgba(239, 68, 68, 0.5);
+  opacity: 1;
+}
+.btn.mini {
+  padding: 2px 6px;
+  font-size: 11px;
+  letter-spacing: 0;
+}
+.btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.btn:disabled:hover {
+  background: transparent;
+  color: var(--color-foreground-secondary);
+  border-color: var(--line);
+}
+
+.search {
+  position: relative;
+  /* the field never collapses: the spacers either side will starve a shrinkable item once the bar
+     is crowded, and a zero-width search box is worse than a bar that scrolls */
+  flex: 0 0 auto;
+}
+.search input {
+  /* scales with the viewport so the field, not the board title, gives way in a crowded bar */
+  width: clamp(130px, 17vw, 220px);
+}
+
+/* filter disclosure — the categories live behind the chevron. The trigger is a ghost like its
+   neighbours in the bar; only the pane it opens wears the ink surface. */
+.filter-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  background: transparent;
+  color: var(--color-foreground-secondary);
+  border-color: var(--line);
+}
+.filter-toggle:hover {
+  background: var(--lift);
+  color: var(--color-foreground);
+  border-color: var(--line-strong);
+}
+.filter-toggle .chev {
+  width: 8px;
+  height: 5px;
+  transition: transform 140ms var(--ease-out);
+}
+.filter-toggle[aria-expanded='true'] {
+  background: var(--lift);
+  color: var(--color-foreground);
+  border-color: var(--line-strong);
+}
+.filter-toggle[aria-expanded='true'] .chev {
+  transform: rotate(180deg);
+}
+.filter-count {
+  font-variant-numeric: tabular-nums;
+  background: var(--ivory);
+  color: #000;
+  padding: 0 4px;
+}
+.filter-count[hidden] {
+  display: none;
+}
+
+/* The pane floats over the board rather than pushing it down. It is the page's own fill, so what
+   separates it from the board is the 1px rule and the dimmed content behind it rather than a second
+   surface colour — there is no ink plane left anywhere in the app. */
+.filter-panel {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: max-content;
+  max-width: min(680px, calc(100vw - 24px));
+  padding: 10px 12px 12px;
+  border: 1px solid var(--line-strong);
+  background: var(--color-background);
+}
+.filter-panel[hidden] {
+  display: none;
+}
+.filter-group {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.filter-group-name {
+  flex: 0 0 74px;
+  padding-top: 3px;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  /* secondary, not muted: these are 9px labels and the muted token measured ~3.8:1 on the ink pane
+     (and ~3.2:1 on the elevated surface before it), both under AA for small text */
+  color: var(--color-foreground-secondary);
+}
+.filter-group .chips {
+  flex: 1 1 auto;
+}
+.filter-panel-foot {
+  display: flex;
+  justify-content: flex-end;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+
+/* priority legend — documents the rail on the top edge of each card. It sits in the read-out row
+   with no divider of its own: the row is not a toolbar and nothing in it should read as a control. */
+.prio-legend {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--color-foreground-secondary);
+}
+.prio-legend[hidden] {
+  display: none;
+}
+.prio-legend-label {
+  color: var(--color-foreground-secondary);
+}
+.prio-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+/* one definition of the priority palette, shared by the card rail, the legend and the filters */
+.prio-swatch {
+  display: block;
+  width: 12px;
+  height: 3px;
+  background: transparent;
+}
+[data-prio='1'] .prio-swatch {
+  background: var(--color-priority-p0);
+}
+[data-prio='2'] .prio-swatch {
+  background: var(--color-priority-p1);
+}
+[data-prio='3'] .prio-swatch {
+  background: var(--color-priority-p2);
+}
+/* NONE draws no rail on a card, so its key is hollow rather than a grey bar */
+[data-prio='0'] .prio-swatch {
+  border: 1px dashed var(--color-foreground-muted);
+}
+
+.input {
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--color-foreground);
+  background: var(--inset-bg);
+  border: 1px solid var(--line);
+  padding: 6px 7px;
+  width: 100%;
+  transition: border-color 120ms var(--ease-out), box-shadow 120ms var(--ease-out);
+}
+.input::placeholder {
+  color: var(--color-foreground-secondary);
+  letter-spacing: 0.08em;
+  font-size: 10px;
+}
+.input:focus {
+  outline: none;
+  border-color: var(--color-border-focus);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--color-border-focus) 40%, transparent);
+}
+textarea.input {
+  resize: vertical;
+  line-height: 1.5;
+  min-height: 60px;
+}
+input[type='date'].input {
+  color-scheme: dark;
+}
+
+/* segmented control */
+.seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+}
+.seg > * + * {
+  margin-left: -1px;
+}
+.seg button {
+  font-family: inherit;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-foreground-secondary);
+  background: transparent;
+  border: 1px solid var(--line);
+  padding: 5px 9px;
+  cursor: pointer;
+  transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out);
+}
+.seg button:hover:not(:disabled):not([aria-pressed='true']) {
+  background: var(--lift);
+  color: var(--color-foreground);
+}
+.seg button[aria-pressed='true'] {
+  background: var(--ivory);
+  border-color: var(--ivory);
+  color: #000;
+  font-weight: 700;
+}
+.seg button:disabled {
+  color: var(--color-foreground-muted);
+  border-style: dashed;
+  cursor: default;
+}
+
+/* chips */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 5px;
+  border: 1px solid var(--line);
+  color: var(--color-foreground-secondary);
+  background: var(--inset-bg);
+  white-space: nowrap;
+}
+button.chip {
+  cursor: pointer;
+  transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out);
+}
+button.chip:hover {
+  background: var(--lift);
+  color: var(--color-foreground);
+}
+/* selected filter chip — the ivory ON treatment used by the segmented controls */
+button.chip[aria-pressed='true'],
+button.chip[aria-pressed='true']:hover {
+  background: var(--ivory);
+  border-color: var(--ivory);
+  color: #000;
+}
+.chip.blocked {
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.5);
+}
+.chip.override {
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.5);
+}
+.chip.due-overdue {
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.5);
+}
+.chip.due-today {
+  color: var(--color-due-today);
+  border-color: rgba(20, 184, 166, 0.5);
+}
+.chip.prio {
+  color: var(--color-foreground);
+  border-color: var(--line-strong);
+}
+
+/* ============================================================
+   Board
+   ============================================================ */
+.board {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  padding: 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  min-height: 0;
+  /* a board narrower than the viewport sits in the middle rather than against the left edge, for any
+     number of columns. Once they cannot fit, the auto margins resolve to zero and the row scrolls
+     from the first column as usual. `safe` guards the centre: plain `center` clips the overflow on
+     the left where scrollLeft cannot go negative, leaving the first columns unreachable at narrow
+     widths (ISSUES.md, third defect carried on the vanilla target). */
+  justify-content: safe center;
+  margin-inline: auto;
+  width: max-content;
+  max-width: 100%;
+}
+.board > .plate {
+  flex: 0 0 auto;
+  margin-inline: auto;
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 var(--col-width);
+  width: var(--col-width);
+  max-height: 100%;
+  background: var(--color-background);
+  border: 1px solid var(--line);
+}
+/* the column shares the page's fill, so the 1px rule is what draws it and the header band is marked
+   by its own stronger bottom hairline rather than by a change of surface */
+.col-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: var(--density-head-pad);
+  background: var(--color-background);
+  border-bottom: 1px solid var(--line-strong);
+}
+.col-name {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.col-count {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--color-foreground);
+  font-variant-numeric: tabular-nums;
+}
+.col-hidden {
+  font-size: 10px;
+  color: var(--color-foreground-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.col-add {
+  position: relative;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--color-foreground-secondary);
+  background: transparent;
+  border: 1px solid var(--line);
+  cursor: pointer;
+  transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out),
+    border-color 120ms var(--ease-out), transform 100ms var(--ease-out);
+}
+/* visible control is 22px; the interactive area is 38px per WCAG hit-area guidance */
+.col-add::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+}
+/* a white lift rather than a fixed surface colour, so the hover reads as raised on any header hue */
+.col-add:hover {
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--ivory);
+  border-color: var(--line-strong);
+}
+.col-add:active {
+  transform: scale(0.97);
+}
+
+.col-body {
+  flex: 1 1 auto;
+  min-height: 48px;
+  overflow-y: auto;
+  padding: var(--density-body-pad);
+  display: flex;
+  flex-direction: column;
+  gap: var(--density-card-gap);
+  transition: background-color 120ms var(--ease-out);
+}
+.col-body.drag-over {
+  /* the drop target reads as ink — the same fill the floating chrome uses — rather than the indigo
+     wash that predated the navy sweep and was the last blue left in the sheet */
+  background: var(--ink-bg);
+}
+
+.plate {
+  border: 1px dashed var(--line);
+  color: var(--color-foreground-muted);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 14px 10px;
+  text-align: center;
+}
+.plate-action {
+  width: 100%;
+  font-family: inherit;
+  letter-spacing: 0.12em;
+  color: var(--color-foreground-secondary);
+  background: transparent;
+  cursor: pointer;
+  transition: border-color 120ms var(--ease-out), color 120ms var(--ease-out);
+}
+.plate-action:hover {
+  border-color: var(--line-strong);
+  color: var(--ivory);
+}
+
+/* ============================================================
+   Card
+   ============================================================ */
+.card {
+  position: relative;
+  background: var(--card-bg);
+  border: 1px solid var(--line);
+  transition: background-color 120ms var(--ease-out), border-color 120ms var(--ease-out);
+}
+.card::before {
+  content: '';
+  position: absolute;
+  /* under the dependency canes (z-index 2) but over the card fill: when a card is being read for
+     its dependencies the border is the message, so the rail gives up the top edge rather than
+     painting across the cane */
+  z-index: 1;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: var(--prio-color, transparent);
+}
+.card[data-prio='1'] {
+  --prio-color: var(--color-priority-p0);
+}
+.card[data-prio='2'] {
+  --prio-color: var(--color-priority-p1);
+}
+.card[data-prio='3'] {
+  --prio-color: var(--color-priority-p2);
+}
+.card:hover {
+  /* the lift is the whole of the general hover: no border change, so the board stays still as the
+     pointer crosses it and a border only ever means a dependency */
+  background: var(--card-bg-hover);
+}
+.card-main {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 6px;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  font-size: var(--density-title);
+  color: inherit;
+  background: transparent;
+  border: 0;
+  padding: var(--density-card-pad);
+  cursor: grab;
+}
+.card-main:active {
+  cursor: grabbing;
+}
+.card-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-weight: 500;
+  line-height: 1.35;
+  word-break: break-word;
+}
+.card[data-blocked='1'] .card-title {
+  color: var(--color-foreground-secondary);
+}
+.card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--density-meta-gap);
+  margin-top: var(--density-meta-top);
+  grid-column: 1 / -1;
+  align-self: start;
+}
+.card-meta:empty {
+  display: none;
+}
+/* ticket number: assigned once, never reused, and the handle people say out loud.
+   Secondary rather than muted: at 10px the muted token measured 4.3:1 on the old neutral card
+   and 3.6:1 on the warm one, both under AA for small text. */
+.card-num {
+  font-size: 10px;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  color: var(--color-foreground-secondary);
+  font-variant-numeric: tabular-nums;
+}
+html[data-show-numbers='0'] .card-num {
+  display: none;
+}
+html[data-show-numbers='0'] .card-main {
+  column-gap: 0;
+}
+/* the wiring in numbers — only while D is held, and only on the hovered card's chain, so this
+   reads as one card's wiring rather than a board-wide mode. The row sits on its own dark strip so
+   the amber/indigo text is never read against the card fill. */
+.card-refs {
+  display: none;
+  grid-column: 1 / -1;
+  align-self: start;
+  gap: 10px;
+  margin-top: 4px;
+  padding: 1px 4px;
+  background: var(--ring-backing);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+html[data-deps-mode='1'] .card[data-chain] .card-refs {
+  display: flex;
+}
+.ref-up {
+  color: var(--ring-amber);
+}
+.ref-down {
+  color: var(--ring-indigo);
+}
+.card.dragging {
+  opacity: 0.4;
+}
+
+/* drop indicators — declared after chain rings so they win during a drag */
+.card.drop-before {
+  box-shadow: inset 0 2px 0 0 var(--ivory);
+}
+.card.drop-after {
+  box-shadow: inset 0 -2px 0 0 var(--ivory);
+}
+
+/* ---------------------------------------------------------------------------
+   Dependency highlight — the only place hovering a card does more than lift it.
+
+   The general hover is just the card's own background lifting (no border of any
+   kind: a ring on every hover made the board look like it was flickering as the
+   pointer crossed it). The border is reserved for dependencies, where it carries
+   meaning: a red candy cane on what the card blocks, and a solid white line on
+   what blocks it. Static, so nothing on the board moves while it is read.
+
+   A card is often BOTH a blocker and blocked, so the two need two separate
+   canvases — one element cannot carry two rings:
+     .card::after          the candy cane. Red, where the card blocks something.
+     .card-cane (a child)  the solid line. White, where the card is blocked.
+   `::before` is the priority rail and is not reusable here.
+
+   The cane is a repeating diagonal gradient masked down to a 2px ring;
+   `border-image` cannot be clipped that way, so the mask does the work.
+--------------------------------------------------------------------------- */
+.card[data-chain]::after,
+.card-cane {
+  position: absolute;
+  /* above the priority rail (z-index 1) so a dependency cane crosses the top edge rather than being
+     cut by it: when a card is being read for its dependencies the border is the message */
+  z-index: 2;
+  inset: 0;
+  content: '';
+  pointer-events: none;
+  padding: 2px;
+  -webkit-mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+}
+
+/* blocks — the static red candy cane, on the outer edge */
+.card[data-chain='blocks']::after,
+.card[data-chain='both']::after {
+  background-image: repeating-linear-gradient(
+    45deg,
+    var(--cane-blocks-a) 0 6px,
+    var(--cane-blocks-b) 6px 12px
+  );
+}
+
+/* blocked — a solid white line, inset one step so it reads separately from the cane */
+.card[data-chain='blocked'] .card-cane,
+.card[data-chain='both'] .card-cane {
+  inset: 4px;
+  background: var(--cane-blocked-solid);
+}
+/* a card that is only blocked has no cane, so its white line takes the outer edge */
+.card[data-chain='blocked']::after {
+  background: var(--cane-blocked-solid);
+}
+.card[data-chain='blocked'] .card-cane {
+  display: none;
+}
+
+/* A row in the key cluster: same shape as the dependency hint, so the right end of the row reads
+   as one reference block rather than several unrelated items. */
+.row-key {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--color-foreground-secondary);
+  white-space: nowrap;
+}
+/* the hint points at the checkbox now, so it explains itself without a mode to enter */
+
+/* Bulk operations. An overlay, not a grid row: `.app`'s template is sized for exactly three
+   children, so a fourth in flow would take the board's `1fr` track and drop the board into an
+   implicit `auto` row — the columns would stop reaching the bottom the moment the bar appeared. */
+.selection-bar {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--line-strong);
+  background: var(--ink-bg);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-foreground-secondary);
+  white-space: nowrap;
+}
+.selection-bar[hidden] {
+  display: none;
+}
+.selection-count {
+  color: var(--ivory);
+}
+.selection-hint {
+  color: var(--color-foreground-muted);
+}
+.selection-targets {
+  display: flex;
+  gap: 6px;
+}
+/* A ticked card. The marker is a box-shadow ring, not a border or a fill: the priority tint owns
+   `background`/`border-color` and the dependency canes own the edges, so a tick drawn in either
+   would be erased the moment those states applied. Nothing else on a card uses box-shadow.
+   The drop indicators also use box-shadow, and during a group drag the card being dropped onto is
+   usually ticked — so the two are combined below rather than one replacing the other. */
+.card[data-picked='1'] {
+  box-shadow: 0 0 0 2px var(--ivory);
+}
+/* a ticked card that is also a drop target keeps both marks: the ring says what is picked, the
+   inset line says where it will land, and neither may erase the other. Declared after both so it
+   wins on a ticked drop target. */
+.card[data-picked='1'].drop-before {
+  box-shadow: 0 0 0 2px var(--ivory), inset 0 2px 0 0 var(--ivory);
+}
+.card[data-picked='1'].drop-after {
+  box-shadow: 0 0 0 2px var(--ivory), inset 0 -2px 0 0 var(--ivory);
+}
+/* The tick is the read-out of the Ctrl mode, not a permanent control: it appears when the modifier
+   is held and disappears with it, so the board is uncluttered the rest of the time and there is no
+   mode to leave behind. */
+.card-tick {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 4;
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: var(--ivory);
+  cursor: pointer;
+  /* the tick has to read over any card fill, including the palest priority tint */
+  outline: 1px solid var(--ring-backing);
+  outline-offset: 1px;
+  display: none;
+}
+html[data-select-mode='1'] .card-tick {
+  display: block;
+}
+/* while Ctrl is held the whole card is the tick target, so the pointer says so */
+html[data-select-mode='1'] .card-main {
+  cursor: copy;
+}
+.btn-small {
+  padding: 2px 6px;
+  font-size: 10px;
+}
+
+/* the hint doubles as the mode indicator: the label the key is named after */
+.deps-indicator {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  /* secondary, not muted: this is the only place the overlay's hotkey is taught, and muted grey on
+     the page background measured 4.17:1 at 10px — under AA for the app's headline feature */
+  color: var(--color-foreground-secondary);
+  white-space: nowrap;
+}
+/* The key is drawn as a keycap, the way editors draw a shortcut in a tooltip: a bordered cap with a
+   lit top edge and a darker foot, sitting on the baseline of the words around it. "hold D" as plain
+   text reads as a word — and the hotkey is the app's headline feature, so it has to look like a key
+   at a glance rather than be inferred from the sentence. The cap is the inset surface plus a 2px
+   foot, which is what sells it as something to press. */
+.kbd {
+  display: inline-block;
+  min-width: 16px;
+  margin: 0 4px;
+  padding: 2px 5px 1px;
+  border: 1px solid var(--line-strong);
+  border-top-color: rgba(255, 255, 255, 0.28);
+  border-bottom: 2px solid rgba(0, 0, 0, 0.55);
+  background: var(--inset-bg);
+  color: var(--ivory);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+.deps-on {
+  display: none;
+}
+html[data-deps-mode='1'] .deps-keys {
+  display: none;
+}
+html[data-deps-mode='1'] .deps-indicator {
+  border-color: rgba(245, 158, 11, 0.6);
+  color: var(--color-accent);
+}
+html[data-deps-mode='1'] .deps-on {
+  display: inline;
+}
+
+/* ============================================================
+   Dialogs
+   ============================================================ */
+dialog {
+  color: var(--color-foreground);
+  font-family: var(--font-mono);
+  background: var(--ink-bg);
+  border: 1px solid var(--line-strong);
+  padding: 0;
+}
+dialog::backdrop {
+  background: rgba(0, 0, 0, 0.62);
+}
+
+.drawer {
+  margin: 0 0 0 auto;
+  width: min(420px, 100vw);
+  max-width: 100vw;
+  height: 100dvh;
+  max-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  border-top: 0;
+  border-bottom: 0;
+  border-right: 0;
+  /* the sidebar is the page's own material, per the user's call — its edge is the 1px rule and the
+     dimmed backdrop behind it, not a different fill. Modals keep the ink surface: they appear over
+     the board rather than beside it. */
+  background: var(--color-background);
+  animation: drawer-in 180ms var(--ease-out);
+}
+.drawer:not([open]) {
+  display: none;
+}
+@keyframes drawer-in {
+  from {
+    transform: translateX(10px);
+    opacity: 0.4;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+.drawer-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  background: var(--color-background-subtle);
+}
+.drawer-kicker {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--color-foreground-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.drawer-head .btn {
+  margin-left: auto;
+}
+.drawer-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 10px;
+}
+.drawer-foot {
+  border-top: 1px solid var(--line);
+  padding: 8px 10px;
+  background: var(--color-background-subtle);
+}
+
+.field {
+  display: block;
+  margin-bottom: 14px;
+}
+/* Sections in the drawer run into each other without a rule: the labels are the same size and the
+   same colour, so the eye has nothing to group by. The divider names those boundaries — drawn as a
+   top rule with breathing room above the section's own label rather than a box around it, so it
+   reads as a division in one column rather than a set of cards. */
+.field-divider {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.field [data-field-actions] {
+  flex-wrap: wrap;
+}
+.field-label {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-foreground-secondary);
+  margin-bottom: 5px;
+}
+.row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.row .input {
+  flex: 1 1 auto;
+}
+.hint {
+  font-size: 10px;
+  line-height: 1.55;
+  color: var(--color-foreground-muted);
+  margin: 6px 0 0;
+}
+.meta-line {
+  font-size: 10px;
+  color: var(--color-foreground-muted);
+  font-variant-numeric: tabular-nums;
+  margin: 4px 0 0;
+}
+
+.picker {
+  border: 1px solid var(--line);
+  border-top: 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.picker:empty {
+  display: none;
+}
+.picker button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--color-foreground-secondary);
+  background: var(--inset-bg);
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 6px 7px;
+  cursor: pointer;
+}
+.picker button:last-child {
+  border-bottom: 0;
+}
+.picker button:hover:not(:disabled) {
+  background: var(--lift);
+  color: var(--color-foreground);
+}
+.picker button:disabled {
+  color: var(--color-foreground-muted);
+  cursor: default;
+}
+.picker .picker-col {
+  color: var(--color-foreground-muted);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.picker .picker-note {
+  padding: 6px 7px;
+  font-size: 10px;
+  color: var(--color-foreground-muted);
+  background: var(--inset-bg);
+}
+
+.modal {
+  width: min(460px, 92vw);
+  padding: 14px;
+  animation: modal-in 160ms var(--ease-out);
+}
+.modal:not([open]) {
+  display: none;
+}
+@keyframes modal-in {
+  from {
+    transform: scale(0.97);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+.modal-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.modal-text {
+  font-size: 12px;
+  color: var(--color-foreground-secondary);
+  line-height: 1.55;
+  margin-bottom: 14px;
+}
+.modal-text ul {
+  margin: 6px 0 0;
+  padding-left: 16px;
+}
+.modal-text li {
+  margin-bottom: 2px;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+/* settings column rows */
+.col-rows {
+  border: 1px solid var(--line);
+  margin-bottom: 8px;
+}
+.col-rows:empty {
+  display: none;
+}
+.col-row {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border-bottom: 1px solid var(--line);
+  background: var(--inset-bg);
+}
+.col-row:last-child {
+  border-bottom: 0;
+}
+.col-row .input {
+  padding: 4px 6px;
+  font-size: 11px;
+}
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.check input {
+  /* the neutral white, not the amber focus accent: the accent means warning in this palette, and a
+     checked box is a state rather than an alarm */
+  accent-color: var(--color-border-focus);
+  margin: 0;
+  cursor: pointer;
+}
+
+/* inline add-card form */
+.add-form {
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.add-form .hint {
+  margin: 0;
+}
+
+/* ============================================================
+   Toasts
+   ============================================================ */
+.toasts {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 20;
+  max-width: min(440px, calc(100vw - 24px));
+}
+.toast {
+  border: 1px solid var(--line-strong);
+  border-left-width: 3px;
+  background: var(--ink-bg);
+  color: var(--color-foreground-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 7px 9px;
+  cursor: pointer;
+  animation: toast-in 160ms var(--ease-out);
+}
+.toast[data-kind='info'] {
+  border-left-color: var(--color-border-focus);
+}
+.toast[data-kind='ok'] {
+  border-left-color: var(--color-vu-green);
+}
+.toast[data-kind='warn'] {
+  border-left-color: var(--color-accent);
+}
+.toast[data-kind='error'] {
+  border-left-color: var(--color-destructive);
+  color: var(--color-foreground);
+}
+@keyframes toast-in {
+  from {
+    transform: translateY(6px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
