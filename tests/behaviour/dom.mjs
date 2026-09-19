@@ -95,6 +95,8 @@ export const sel = {
   // ---- toolbar and read-outs -------------------------------------------------
   counters: "#counters",
   boardName: "#board-name",
+  /** The h1's in-place editor (React only; the vanilla h1 is not editable). */
+  boardNameInput: "#board-name-input",
   storageLamp: "#storage-lamp",
   storageLampText: "#storage-lamp-text",
   filterToggle: "#filter-toggle",

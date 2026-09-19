@@ -312,6 +312,8 @@ function describeCapability(targetId, capability) {
     "html5-drag": "an HTML5 drop cannot be synthesised",
     "file-protocol": "this target cannot be opened from the filesystem",
     "static-export": "this target has no build output",
+    "board-collection": "this target keeps the frozen single-board key",
+    "in-place-rename": "this target's navbar title is a read-only h1",
   };
   return `${notes[capability] || "not available on this target"}`;
 }

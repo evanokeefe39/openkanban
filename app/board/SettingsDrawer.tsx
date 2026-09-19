@@ -7,6 +7,7 @@ import type { Column, ViewOptions } from "@/lib/types";
 import { titleCaseLabel } from "@/lib/format";
 import { uid } from "@/lib/board";
 import { pushToast } from "@/stores/toast.store";
+import { commitBoardName } from "./board-name";
 
 /** App-level view-toggle metadata, as in the reference `app.js`. */
 const VIEW_TOGGLES: Array<{ key: keyof ViewOptions; label: string; title: string }> = [
@@ -59,17 +60,13 @@ export function SettingsDrawer() {
   };
 
   const setBoardName = (rawName: string) => {
-    const name = rawName.trim();
-    if (!name) {
-      pushToast("warn", "BOARD NAME NOT CHANGED — A NAME IS REQUIRED");
+    // the trim, the blank refusal and the title-casing are one definition,
+    // shared with the toolbar title — see app/board/board-name.ts
+    const refused = !commitBoardName(rawName);
+    if (refused) {
       const nameInput = ref.current?.querySelector<HTMLInputElement>("#settings-name");
       if (nameInput) nameInput.value = board.name;
-      return;
     }
-    if (titleCaseLabel(name) === board.name) return;
-    useBoardStore.getState().commit((draft) => {
-      draft.name = titleCaseLabel(name);
-    });
   };
 
   const renameColumn = (columnId: string, rawName: string) => {

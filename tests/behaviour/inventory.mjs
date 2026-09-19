@@ -80,7 +80,13 @@ export const REQUIRED = {
   E7: "a ticked card that disappears is pruned from the selection",
   E8: "CLEAR empties the ticked set and hides the bar",
 
-  F1: "the settings drawer edits the board name, refusing a blank one",
+  // Changed when the header title became editable in place (f-columns-11..13):
+  // F1 now covers BOTH name-editing surfaces — the settings drawer and the
+  // header's click-to-edit h1 — sharing one commit path. The frozen vanilla
+  // reference keeps a read-only header, so the new checks declare the
+  // `in-place-rename` capability (see capabilities.mjs) and defer on vanilla;
+  // f-columns-01/02 keep the drawer covered on both targets.
+  F1: "the board name is edited in place in the header and in the settings drawer, refusing a blank one",
   F2: "columns can be added, renamed, reordered and deleted",
   F3: "deleting a column holding cards moves them left and reports the count",
   F4: "deleting the last remaining column is refused",

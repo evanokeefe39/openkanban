@@ -23,6 +23,9 @@ export const CAPABILITIES = {
     // is a React-app feature, so K1-K9 defer here rather than fail. Deferred is
     // printed, never counted as covered.
     "board-collection": false,
+    // the navbar title is a plain read-only h1 in the frozen reference; in-place
+    // editing exists only in the React app, so those checks defer here.
+    "in-place-rename": false,
   },
   react: {
     // dnd-kit uses pointer events, which Playwright can synthesise — the concrete win
@@ -34,6 +37,7 @@ export const CAPABILITIES = {
     "file-protocol": false,
     "static-export": true,
     "board-collection": true,
+    "in-place-rename": true,
   },
 };
 
@@ -45,6 +49,8 @@ export const CAPABILITY_NOTES = {
   "static-export": "the build emits a static bundle to out/, with no server features",
   "board-collection":
     "one board per browser; the vanilla reference is frozen on the single-board key",
+  "in-place-rename":
+    "the navbar title edits in place; the vanilla reference's title is read-only and frozen",
 };
 
 /** True when `target` has `capability`. Unknown targets have nothing. */

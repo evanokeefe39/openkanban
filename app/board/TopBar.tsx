@@ -1,10 +1,97 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { useBoardStore } from "@/stores/board.store";
 import { useViewStore } from "@/stores/view.store";
 import { formatCounters } from "@/lib/format";
 import type { FilterState } from "@/lib/format";
+import { commitBoardName } from "./board-name";
 import { ChevIcon, FilterIcon, GridIcon, SlidersIcon, TrashIcon } from "./icons";
+
+/**
+ * The board title, editable in place: click it (or focus it and press Enter or
+ * Space) and it becomes a field; Enter or a blur commits, Escape cancels.
+ *
+ * The editor and the settings drawer both commit through `commitBoardName`, so
+ * the trim, the blank refusal and the title-casing are one definition.
+ *
+ * Escape is the subtle part. Cancelling must not then be committed by the blur
+ * that Escape causes as the field is removed, so the cancel is recorded in a
+ * ref and the blur handler consumes it — a state flag would not be set in time,
+ * since blur fires before a re-render.
+ */
+function BoardTitle({ name }: { name: string }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(name);
+  const cancelled = useRef(false);
+
+  useEffect(() => {
+    if (editing) setDraft(name);
+  }, [editing, name]);
+
+  const open = () => {
+    cancelled.current = false;
+    setDraft(name);
+    setEditing(true);
+  };
+
+  const commit = () => {
+    setEditing(false);
+    commitBoardName(draft);
+  };
+
+  if (!editing) {
+    return (
+      <h1
+        className="board-name"
+        id="board-name"
+        role="button"
+        tabIndex={0}
+        title="Click to rename this board"
+        onClick={open}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            open();
+          }
+        }}
+      >
+        {name}
+      </h1>
+    );
+  }
+
+  return (
+    <input
+      className="input board-name board-name-edit"
+      id="board-name-input"
+      type="text"
+      aria-label="Board name"
+      spellCheck={false}
+      autoFocus
+      value={draft}
+      onChange={(event) => setDraft(event.currentTarget.value)}
+      onFocus={(event) => event.currentTarget.select()}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          commit();
+        } else if (event.key === "Escape") {
+          cancelled.current = true;
+          setEditing(false);
+        }
+      }}
+      onBlur={() => {
+        // Escape removed the field itself, so the blur it caused is not a commit
+        if (cancelled.current) {
+          cancelled.current = false;
+          return;
+        }
+        commit();
+      }}
+    />
+  );
+}
 
 /** The badge count: chips across the four categories, plus a non-empty query. */
 function activeFilterCount(query: string, filters: FilterState): number {
@@ -42,9 +129,7 @@ export function TopBar({ onOpenReset }: { onOpenReset: () => void }) {
   return (
     <header className="topbar">
       <span className="brand">OPENKANBAN</span>
-      <h1 className="board-name" id="board-name">
-        {board.name}
-      </h1>
+      <BoardTitle name={board.name} />
       <p className="counters" id="counters">
         {formatCounters(board)}
       </p>

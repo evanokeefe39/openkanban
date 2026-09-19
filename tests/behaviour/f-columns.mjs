@@ -2,7 +2,8 @@
  * Board settings, column management, and the header read-outs.
  *
  * Owns features F1–F8 (see `inventory.mjs`):
- *   F1  the settings drawer edits the board name, refusing a blank one
+ *   F1  the board name is edited in place in the header and in the settings
+ *       drawer, refusing a blank one (f-columns-11..13 cover the header)
  *   F2  columns can be added, renamed, reordered and deleted
  *   F3  deleting a column holding cards moves them left and reports the count
  *   F4  deleting the last remaining column is refused
@@ -419,6 +420,183 @@ export default {
             visible === filtered &&
             counters === SEED.counters,
           { visible, filtered, counters, seed: SEED.counters }
+        );
+      },
+    },
+
+    // ---- F1 — the navbar title commits a rename through Enter ---------------
+    // React-only: the frozen vanilla reference's `#board-name` is a plain
+    // read-only h1, so these three checks declare the `in-place-rename`
+    // capability and defer on vanilla rather than fail there.
+    {
+      id: "f-columns-11",
+      feature: "F1",
+      capability: "in-place-rename",
+      name: "the navbar title commits a rename through Enter, and it lands in the read-out, the title and storage",
+      run: async (ctx) => {
+        await ctx.freshBoard();
+        const sample = SEED.sampleName(ctx.target);
+        if ((await ctx.text(sel.boardName)) !== sample) return ok(false, { step: "initial readout" });
+
+        await ctx.page.click(sel.boardName);
+        await ctx.waitFor(() => document.getElementById("board-name-input") !== null, null);
+        await ctx.page.fill(sel.boardNameInput, "navbar board");
+        await ctx.press("Enter");
+        await ctx.waitFor(
+          (want) => document.getElementById("board-name").textContent === want,
+          "NAVBAR BOARD"
+        );
+
+        // a reload restores it — the commit persisted, not just rendered
+        await ctx.settle();
+
+        const shown = await nameState(ctx);
+        const stored = await ctx.storedBoard();
+        return ok(
+          shown.readout === "NAVBAR BOARD" &&
+            shown.title === "NAVBAR BOARD — OpenKanban" &&
+            stored.name === "NAVBAR BOARD",
+          { shown, storedName: stored.name }
+        );
+      },
+    },
+
+    // ---- F1 — Escape cancels the navbar rename; blur commits it -------------
+    {
+      id: "f-columns-12",
+      feature: "F1",
+      capability: "in-place-rename",
+      name: "Escape reverts the navbar rename with no toast, and a blur commits it",
+      run: async (ctx) => {
+        await ctx.freshBoard();
+        const sample = SEED.sampleName(ctx.target);
+
+        // `freshBoard` boots a fresh sample, which raises its own info toast. The
+        // clause below is about what *Escape* raises, so it is measured as a delta
+        // against the toasts already on screen — asserting "no toasts at all" here
+        // counts the boot notice and reds on a correct app.
+        const baseline = (await ctx.toasts()).map((t) => t.text);
+
+        await ctx.page.click(sel.boardName);
+        await ctx.waitFor(() => document.getElementById("board-name-input") !== null, null);
+        await ctx.page.fill(sel.boardNameInput, "cancel me");
+        await ctx.press("Escape");
+        await ctx.waitFor(
+          (want) => document.getElementById("board-name").textContent === want,
+          sample
+        );
+
+        const afterEscape = await nameState(ctx);
+        const storedAfterEscape = await ctx.storedBoard();
+        const escapeToasts = (await ctx.toasts()).map((t) => t.text);
+        const raisedByEscape = escapeToasts.filter((text) => !baseline.includes(text));
+        const escapeClean =
+          afterEscape.readout === sample &&
+          storedAfterEscape.name === sample &&
+          raisedByEscape.length === 0;
+
+        // a blur through a neutral toolbar element commits
+        await ctx.page.click(sel.boardName);
+        await ctx.waitFor(() => document.getElementById("board-name-input") !== null, null);
+        await ctx.page.fill(sel.boardNameInput, "blur board");
+        await ctx.page.click(sel.counters);
+        await ctx.waitFor(
+          (want) => document.getElementById("board-name").textContent === want,
+          "BLUR BOARD"
+        );
+
+        const shown = await nameState(ctx);
+        const stored = await ctx.storedBoard();
+        return ok(
+          escapeClean &&
+            shown.readout === "BLUR BOARD" &&
+            shown.title === "BLUR BOARD — OpenKanban" &&
+            stored.name === "BLUR BOARD",
+          {
+            escape: {
+              shown: afterEscape,
+              storedName: storedAfterEscape.name,
+              baseline,
+              raisedByEscape,
+            },
+            afterBlur: { shown, storedName: stored.name },
+          }
+        );
+      },
+    },
+
+    // ---- F1 — a blank name is refused from the navbar -----------------------
+    {
+      id: "f-columns-13",
+      feature: "F1",
+      capability: "in-place-rename",
+      name: "a whitespace-only navbar rename is refused with the warn toast, and the title is keyboard-activatable",
+      run: async (ctx) => {
+        await ctx.freshBoard();
+        const sample = SEED.sampleName(ctx.target);
+
+        // The h1 announces itself as interactive and is reachable by keyboard:
+        // focus it the way a Tab would land, then Enter, then Space — each
+        // enters edit mode; Escape leaves it between the two.
+        const interactivity = await ctx.page.evaluate(() => {
+          const h1 = document.getElementById("board-name");
+          return {
+            role: h1.getAttribute("role"),
+            tabindex: h1.getAttribute("tabindex"),
+            title: h1.getAttribute("title"),
+          };
+        });
+        await ctx.page.evaluate(() => document.getElementById("board-name").focus());
+        await ctx.press("Enter");
+        await ctx.waitFor(() => document.getElementById("board-name-input") !== null, null);
+        await ctx.press("Escape");
+        await ctx.waitFor(() => document.getElementById("board-name-input") === null, null);
+        await ctx.page.evaluate(() => document.getElementById("board-name").focus());
+        await ctx.press(" ");
+        await ctx.waitFor(() => document.getElementById("board-name-input") !== null, null);
+
+        await ctx.page.fill(sel.boardNameInput, "   ");
+        await ctx.press("Enter");
+        await ctx.waitFrames();
+
+        const toasts = await ctx.toasts();
+        const refuse = toasts.find((t) =>
+          /BOARD NAME NOT CHANGED — A NAME IS REQUIRED/.test(t.text)
+        );
+        const shown = await nameState(ctx);
+        const stored = await ctx.storedBoard();
+        // Pinned, because it was measured rather than assumed: a refused name closes the editor
+        // and restores the h1 showing the stored name. The refusal is not silent — the warn toast
+        // is what makes it visible — but the field does not stay open, so a user who typed only
+        // spaces is returned to the title rather than left in a field that will not accept input.
+        // If this ever changes to keep the field open, this assertion is the thing that fails.
+        await ctx.waitFor(() => document.getElementById("board-name-input") === null, null);
+        const editorClosed = (await ctx.count(sel.boardNameInput)) === 0;
+        const h1 = await ctx.page.evaluate(() => {
+          const el = document.getElementById("board-name");
+          return { present: el !== null, text: el?.textContent ?? null };
+        });
+
+        return ok(
+          interactivity.role === "button" &&
+            interactivity.tabindex === "0" &&
+            !!interactivity.title &&
+            !!refuse &&
+            refuse.kind === "warn" &&
+            editorClosed &&
+            h1.present &&
+            h1.text === sample &&
+            shown.readout === sample &&
+            shown.title === `${sample} — OpenKanban` &&
+            stored.name === sample,
+          {
+            interactivity,
+            refuseToast: refuse ?? toasts,
+            shown,
+            storedName: stored.name,
+            editorClosed,
+            h1,
+          }
         );
       },
     },
