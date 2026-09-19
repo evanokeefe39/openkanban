@@ -32,6 +32,19 @@ commented exception (there are none today).
 
 These are the specific shapes that have been defects here. Each is worth a second look in a diff.
 
+**A derivation that reads a list the document is allowed to leave stale.** The port's selection
+pruning derived "which cards still exist" from `column.cardIds`, and reset clears `board.cards` only,
+leaving `cardIds` dangling (`app.js:1866`) — so the deleted cards stayed "live", the selection never
+pruned, and the bulk bar kept reading `2 SELECTED` over an empty board. The reference derives the same
+thing from the cards map (`app.js:1263`: `if (!card(id)) ui.selection.delete(id)`), which is the only
+list that is authoritative for existence. Ask of any "is this still present" test: **which list is the
+truth here, and can the document shape leave it stale?** `cardIds` is ordering; `cards` is existence.
+
+**A count and its visibility control derived from two different sources.** The same defect showed as
+`picked: []` alongside `2 SELECTED` — the tick state had pruned while the count had not. When a panel
+displays a total and also decides whether to show itself, both must read the same value, or they will
+disagree exactly when it matters.
+
 **A new path that relocates a card without calling `applyMove`.** The bulk move shipped once pushing
 ids straight into `column.cardIds` and committing, which skipped the gate in `attemptMove` entirely —
 multi-card drags would have moved blocked cards into gated columns with no warning and no override.
@@ -162,12 +175,13 @@ Each has been raised at least once and each is correct. Checking them again cost
   design; page-level horizontal scroll is 0.
 - **The toolbar is ~13px off true centre.** The search field is centred, not the row.
 - **Reset keeps the filters while import clears them.** Deliberate and documented in `ISSUES.md`.
-- **The drag gesture has no check that has ever executed.** Playwright's synthetic mouse fires
-  `dragstart` and `dragover` but never `drop`, so `tests/smoke.mjs` cannot test it, and the behaviour
-  suite's five gesture checks (`D1`, `D3`, `D6`, `D7`, `D8`) are written against the DOM contract but
-  report `deferred` on the vanilla target and have not run — the React target does not exist yet. They
-  are the suite's one unverified area, and describing them as covering anything is exactly the claim
-  this repo's own rules forbid. Phase 4 executes them for the first time.
+- **The drag gesture's checks now execute and pass on the new app.** Playwright's synthetic mouse
+  cannot complete an HTML5 `drop`, which is why `tests/smoke.mjs` cannot test the vanilla drag and why
+  the five gesture checks (`D1`, `D3`, `D6`, `D7`, `D8`) were unverified for the life of the port's
+  planning. The new app uses dnd-kit pointer events, so all five run and pass there
+  (`OK_BROWSER_CHANNEL=msedge node tests/run-behaviour.mjs --target react --only d-move-01..08`).
+  They remain `deferred` on the vanilla target only — which is the correct meaning of "deferred" and
+  is not coverage. Do not describe a `skipped` check as proof of anything.
 - **A computed colour read two frames after a state change is a sample mid-transition.** `.card`
   transitions `border-color` over 120ms, so an `i-colour` reading taken with the usual `waitFrames()`
   returned `oklab(0.997 -0.004 0.010 / 0.122)` where the resting value is `rgba(255,255,255,0.1)` —

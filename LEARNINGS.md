@@ -275,3 +275,92 @@ The rules:
   that follow a `write` are the reason recovery is only cheap if the `write` exists.
 - **Have workers commit as they go.** The lost slice had no commit; the recovery ended with one, and
   that is what makes it durable.
+
+
+## The failure detail tells you which assertion failed — read it against the check
+
+**Cost: two wrong diagnoses in one session, one of them sent to a worker as a fix instruction.**
+
+Symptom: a check failed and the detail contained a field that looked correct. `c-graph-04` (C4)
+reported `{"title":"BLOCKED CARD → GATED COLUMN","items":[...],"okLabel":"MOVE ANYWAY",
+"stillInTodo":true}` — every visible field right — so the failure was attributed to a stale build, and
+later to the body text, which did contain the expected substring.
+
+Root cause: the detail payload did not include the assertion that failed. The check asserts
+`items.includes("Dependency graph: blockedBy edges — TO DO")` — an exact `Array.includes` — while the
+app rendered `"#4 Dependency graph: blockedBy edges — TO DO"`. The `#4 ` prefix made that assertion
+false, and no amount of inspecting the *body* substring could reveal it. The reference
+(`app.js:711`) renders that list item with no ticket number; the bulk-move list (`app.js:1350`) does
+include one. Two similar lists, two different formats, and the port had them swapped.
+
+The same session produced a second instance of the same shape: twelve checks timed out in the shared
+`ctx.waitFor` helper, the shared stack frame was read as a shared cause, and the diagnosis "selection
+mode is broken" went to a worker — where a probe immediately disproved it (`selectMode` flips to `1`,
+ticks appear, the chain lights up). The checks were the wrong side of the failure.
+
+The rule:
+
+- **Read the check's actual comparison before explaining its failure.** The detail field that is
+  present and correct is usually the one that is not being asserted.
+- **A shared stack frame is not a shared cause.** `ctx.waitFor` appearing in twelve traces means
+  twelve things waited; what each waited *on* is the diagnosis, and they differ.
+- **When a detail payload omits the field you need, add it to the check** rather than reasoning from
+  the fields that happen to be there. `ok(false, {...})` should carry every value the assertion
+  compares, or the next reader repeats this.
+- **Probe before dispatching a fix.** A 10-second in-browser measurement would have prevented the
+  false diagnosis from reaching a worker, where it risked removing a focus guard that another check
+  (I11) depends on.
+
+
+## Serving a static export by hand is a bug waiting for a MIME type
+
+**Cost: two blocks on the user, and a debugging loop on code that should not have existed.**
+
+Symptom: `localhost:4173` offered to download the page instead of rendering it.
+
+Root cause: a hand-written static server derived `Content-Type` from `req.url`. A request for `/` has
+no extension, so the lookup missed and fell through to `application/octet-stream`, which makes a
+browser download the body. The app was always fine — the server never was.
+
+The rule:
+
+- **Run the framework's own server.** `next dev` (`npm run dev`, port 3000) is the way to look at this
+  app; it hot-reloads, needs no export, and has no MIME logic to get wrong.
+- **Serve `out/` with a real tool** when a built artifact must be reviewed — never with a bespoke
+  server written for the occasion. The one exception is inside a test, where the harness already owns
+  a correct static server and the test asserts against it.
+- **A hand-rolled HTTP server is a liability with no upside here.** The 40 lines it saves are repaid
+  with interest the first time a content type, a range request or a path traversal is got wrong.
+
+
+## Fixing the app and loosening the check is fixing nothing
+
+**Cost: a real, verified divergence was briefly made unfalsifiable.**
+
+Symptom: `c-graph-04` (C4) failed on `items.includes("Dependency graph: blockedBy edges — TO DO")`
+while the app rendered `"#4 Dependency graph: blockedBy edges — TO DO"`. The reference
+(`app.js:711`) renders that list *without* a ticket number; the port had added one. A real defect.
+
+What happened next is the mistake. The assertion was rewritten to a regex with an **optional**
+prefix — `^(?:#\d+\s)?${text}$` — so the check would pass whether or not the prefix was there. In the
+same commit the app was also corrected to drop the prefix. Both sides moved, so the check no longer
+pins anything: re-introduce the prefix tomorrow and C4 still goes green.
+
+The comment written at the time is the tell — it reasoned that "the port renders the ticket number,
+the reference renders the bare name, so assert the same name + column either way." That is a
+description of a bug being written down as a tolerance.
+
+The rule:
+
+- **A failing check names a divergence. Fix the side that is wrong, then re-run — do not edit the
+  assertion.** If the app must change *and* the check must change, the check change needs its own
+  reason that is not "the app differs".
+- **An optional-prefix regex, a `toContain` where equality was meant, a widened tolerance, or a new
+  `KNOWN_DEFECTS` entry are all the same move**: they convert a failing assertion into a passing one
+  without changing behaviour. The suite's whole value is that it *can* fail.
+- **After fixing an app divergence, re-run the STRICT check.** C4 passes with the original exact
+  assertion once the app is right — which proves the loosening was never needed.
+- **When a helper returns `null` and the comparison silently fails, fix the parser, not the
+  assertion.** `sameColour` matched only `#rrggbb` while the CSS supplied `#ffffff1a`; extending the
+  regex to `#rrggbb(aa)?` is a correct fixture fix. The distinction is whether the check can now
+  *observe* the thing it was always trying to assert.

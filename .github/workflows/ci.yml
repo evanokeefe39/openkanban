@@ -4,12 +4,16 @@ name: CI
 # succeeding. The gate is a real browser driving the real page.
 #
 # Three jobs, and the difference between them matters:
-#   smoke      — the original 31-check deploy gate for the vanilla app
-#   behaviour  — the dual-target behaviour suite, GATING against the vanilla app
-#   port       — builds the static export and reports how far the port has got.
-#                Report-only until Phase 5, so a partially ported app cannot turn
-#                the build red while it is being written; the report is uploaded
-#                either way.
+#   smoke      — the original 31-check deploy gate for the frozen vanilla reference
+#   behaviour  — the GATE: the behaviour suite against the frozen vanilla
+#                reference, which is the proven app until the user reviews and
+#                confirms the React rebuild
+#   next       — the Rebuild's suite in report mode. Kept green beside the gate,
+#                so "green on the reference, red on the new app" names a
+#                regression instead of being invisible.
+#
+# At cutover the last two flip: the new app becomes the gate and the reference
+# retires with its vanilla files.
 on:
   push:
     branches: [main]
@@ -57,37 +61,7 @@ jobs:
           if-no-files-found: ignore
 
   behaviour:
-    name: Behaviour suite against the vanilla app
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - run: npm ci
-
-      - name: Install chromium
-        run: npx playwright install --with-deps chromium
-
-      # A gate run: every required feature must be covered by a check that ran on
-      # both the board and the document. An uncovered feature fails the job.
-      - name: Behaviour suite
-        run: npm run behaviour
-
-      - name: Upload the report and any failure screenshots
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: behaviour-vanilla
-          path: tests/.artifacts/
-          if-no-files-found: ignore
-
-  port:
-    name: React port progress (report only)
+    name: Behaviour suite against the frozen vanilla reference (GATE)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -103,20 +77,49 @@ jobs:
       - name: Install chromium
         run: npx playwright install --with-deps chromium
 
-      # The build is a real gate: a static export that does not compile is broken.
-      # It also runs the TypeScript check, which is the compiler-level gate for the port.
-      - name: Build the static export
-        run: npm run build
+      # The gate is the PROVEN app. The user has not yet reviewed the React
+      # rebuild, so the frozen vanilla reference is what gates the build and the
+      # new app is reported beside it. Flipping this before sign-off would
+      # remove the "green on the reference, red on the new app = a named
+      # regression" signal the dual-target suite exists to produce.
+      - name: Behaviour suite
+        run: npm run behaviour
 
-      # Not a gate until Phase 5. The runner says so in its last line, and the
-      # report names exactly which checks are red on the React side.
-      - name: Both targets, cross-app and the visual comparison
-        run: npm run behaviour:all
-
-      - name: Upload the port report
+      - name: Upload the report and any failure screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: port-report
+          name: behaviour-reference
+          path: tests/.artifacts/
+          if-no-files-found: ignore
+
+  next:
+    name: Behaviour suite against the React app (report until sign-off)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install chromium
+        run: npx playwright install --with-deps chromium
+
+      # Report mode until the user confirms the rebuild: a failure here is a
+      # finding to act on, not a blocked release. Flip the two jobs over at
+      # cutover, when the new app becomes the app.
+      - name: Behaviour suite (new app)
+        run: npm run behaviour:next
+
+      - name: Upload the new app's report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: behaviour-next
           path: tests/.artifacts/
           if-no-files-found: ignore

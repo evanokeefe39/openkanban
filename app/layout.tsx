@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "OpenKanban",
+  // no `title` here: the document title is live app state (`<board name> —
+  // OpenKanban`, set by BoardRoot), and a static metadata title would be
+  // re-applied by Next after hydration and clobber it
   description: "A kanban board where dependencies are part of the data model.",
 };
 
@@ -11,14 +13,12 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap"
-        />
-      </head>
+      {/*
+        No font link: JetBrains Mono is self-hosted from `/fonts` via
+        `app/fonts.css`. The app makes no network request at all, which is what
+        makes the offline claim true and keeps the visual comparison against the
+        reference independent of a CDN fetch.
+      */}
       <body suppressHydrationWarning>{children}</body>
     </html>
   );

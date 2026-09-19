@@ -219,10 +219,12 @@ function sameColour(a, b) {
         a: srgb[4] === undefined ? 1 : Number(srgb[4]),
       };
     }
-    const hex = text.match(/^#([0-9a-f]{6})$/i);
+    const hex = text.match(/^#([0-9a-f]{6})([0-9a-f]{2})?$/i);
     if (hex) {
       const n = parseInt(hex[1], 16);
-      return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255, a: 1 };
+      // an optional trailing alpha byte: #RRGGBBAA, alpha scaled to 0–1
+      const a = hex[2] === undefined ? 1 : parseInt(hex[2], 16) / 255;
+      return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255, a };
     }
     return null;
   };

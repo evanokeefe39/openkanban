@@ -2,12 +2,19 @@
 /**
  * Behaviour suite runner.
  *
- * Drives the same checks against both apps and holds the port to them:
+ * Drives the behaviour suite against the app — the Next.js static export in
+ * `out/` — and holds it to the inventory:
  *
- *   node tests/run-behaviour.mjs --target vanilla          the gate for the current app
- *   node tests/run-behaviour.mjs --target react --mode report   progress on the port
- *   node tests/run-behaviour.mjs --target both --cross     both apps, then the cross-app checks
- *   node tests/run-behaviour.mjs --compare                 diff the last two reports
+ *   node tests/run-behaviour.mjs --target react           the gate for the app (default)
+ *   node tests/run-behaviour.mjs --target vanilla         the frozen reference (opt-in)
+ *   node tests/run-behaviour.mjs --target both --mode report
+ *   node tests/run-behaviour.mjs --compare                diff the last two reports
+ *
+ * The cross-app family (J1-J5, formerly `tests/behaviour/crossapp.mjs`) is RETIRED: it
+ * graded a port against the app it was ported from, and with one app there is
+ * no second app to compare against. See `RETIRED` in `tests/behaviour/inventory.mjs`
+ * for why each J id no longer applies. The module is deleted; the rationale
+ * lives in the inventory, and `--cross` is refused rather than ignored.
  *
  * Four statuses, and the difference between them is the point:
  *
@@ -29,7 +36,6 @@ import { ALL_CHECKS } from "./behaviour/index.mjs";
 import { createCtx } from "./behaviour/context.mjs";
 import {
   REQUIRED,
-  REQUIRED_CROSS,
   LEGACY,
   FEATURE_CAPABILITY,
   KNOWN_DEFECTS,
@@ -54,13 +60,11 @@ const MAX_FAILURE_SHOTS = 12;
 
 function parseArgs(argv) {
   const options = {
-    targets: ["vanilla"],
+    targets: ["react"],
     only: [],
     mode: "gate",
     timeout: 45_000,
     build: true,
-    cross: false,
-    visual: false,
     compare: false,
     verbose: false,
     help: false,
@@ -80,12 +84,14 @@ function parseArgs(argv) {
     else if (arg === "--mode") options.mode = value(i++);
     else if (arg === "--timeout") options.timeout = Number(value(i++));
     else if (arg === "--no-build") options.build = false;
-    else if (arg === "--cross") options.cross = true;
-    else if (arg === "--visual") options.visual = true;
+    else if (arg === "--cross" || arg === "--visual")
+      throw new Error(
+        `"${arg}" is retired — the cross-app family (J1-J5, formerly tests/behaviour/crossapp.mjs) is no longer ` +
+          `part of the suite because there is one app, not a port plus its origin. See RETIRED in ` +
+          `tests/behaviour/inventory.mjs.`
+      );
     else if (arg === "--all") {
       options.targets = [...H.TARGET_IDS];
-      options.cross = true;
-      options.visual = true;
       options.mode = "report";
     } else if (arg === "--compare") options.compare = true;
     else if (arg === "--verbose") options.verbose = true;
@@ -101,18 +107,20 @@ function parseArgs(argv) {
 
 const HELP = `openkanban behaviour suite
 
-  --target vanilla|react|both   which app(s) to drive        (default vanilla)
+  --target react|vanilla|both   which app(s) to drive        (default react)
   --only a,b-cards,C4           run only matching suites, check ids or features
   --mode gate|report            gate fails the process; report never does
   --timeout <ms>                per-check ceiling            (default 45000)
   --no-build                    skip the next build for the react target
-  --cross                       also run the cross-app checks (both targets)
-  --visual                      also run the screenshot comparison
-  --all                         both targets, cross and visual, report mode
+  --all                         both targets, report mode
   --compare                     diff the last two target reports
   --verbose                     print the measurement for passing checks too
 
 Exit code is 0 only for a gate run in which everything ran and passed.
+
+The cross-app flags (--cross, --visual) are retired: J1-J5 graded a port against
+its origin app, and the origin is now a frozen reference. See RETIRED in
+tests/behaviour/inventory.mjs.
 `;
 
 // ---------------------------------------------------------------------------
@@ -490,12 +498,6 @@ async function main() {
     for (const targetId of options.targets) {
       summaries.push(await runTarget(browser, targetId, options));
     }
-
-    if (options.cross || options.visual) {
-      const { runCrossApp } = await import("./behaviour/crossapp.mjs");
-      const cross = await runCrossApp(browser, { visual: options.visual, mode: options.mode });
-      summaries.push(cross);
-    }
   } finally {
     await browser.close();
   }
@@ -514,9 +516,6 @@ async function main() {
     if (ledger && ledger.evaluated && !ledger.scoped && (ledger.missing.length || ledger.legacyUncovered.length)) {
       uncovered = true;
     }
-    for (const row of summary.results) {
-      if (row.feature in REQUIRED_CROSS && (row.status === "fail" || row.status === "error")) failed = true;
-    }
   }
 
   console.log("");
@@ -531,7 +530,7 @@ async function main() {
     console.log(
       `REPORT MODE — ${broken} check(s) failing or errored, ${unrunnable} not run. This run is not a gate.`
     );
-    console.log("The gate is `npm run behaviour` against the vanilla app until the port lands (Phase 5).");
+    console.log("The gate is `npm run behaviour` against the React app; the vanilla reference is opt-in (`npm run behaviour:reference`).");
     return 0;
   }
   if (failed || notRun || uncovered) {

@@ -1,10 +1,11 @@
 /**
  * Target lifecycle and read helpers for the behaviour suite.
  *
- * Two targets, one suite. `vanilla` serves the repo root — the three static files
- * — and `react` serves the static export in `out/`. Every check is written once
- * and run against both, so "the port preserved this" is a comparison of two
- * reports rather than a review of two test files.
+ * Two targets, one suite. `react` serves the static export in `out/` — the app
+ * now, and the gate. `vanilla` serves the repo root — the three frozen static
+ * files, kept as the reference target until the React app is personally signed
+ * off; it must stay functional and untouched, but it is opt-in
+ * (`npm run behaviour:reference`).
  *
  * This module deliberately carries its own static server instead of sharing
  * `tools/serve.mjs` or the copy inside `tests/smoke.mjs`: the suite must serve an
@@ -37,7 +38,7 @@ export const TARGETS = {
   },
   react: {
     id: "react",
-    label: "react app (static export in out/)",
+    label: "openkanban (next static export in out/)",
     root: join(ROOT, "out"),
     entry: "/",
     build: true,

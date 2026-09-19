@@ -1,5 +1,5 @@
-import OpenKanban from "./board/OpenKanban";
+import { BoardRoot } from "./board/BoardRoot";
 
 export default function Page() {
-  return <OpenKanban />;
+  return <BoardRoot />;
 }

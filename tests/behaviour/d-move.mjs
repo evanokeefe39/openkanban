@@ -203,11 +203,20 @@ export default {
       run: async (ctx) => {
         await ctx.freshBoard();
         const before = JSON.stringify(await ctx.storedBoard());
+        // "toasts nothing" means the gesture raises no toast of its own. A
+        // fresh board seeds and announces itself, and that notice is still on
+        // screen while this check runs (5s lifetime, app.js:1917) — so count
+        // the toasts before the drag and require the drag to add none. The
+        // assertion is stricter than an absolute zero: it cannot pass by the
+        // boot notice happening to have expired.
+        const toastsBefore = (await ctx.toasts()).length;
         await drag(ctx, "c-graph", await ctx.cardPoint("c-graph"));
         const after = await ctx.storedBoard();
-        return ok(JSON.stringify(after) === before && (await ctx.toasts()).length === 0, {
+        const toastsAfter = await ctx.toasts();
+        return ok(JSON.stringify(after) === before && toastsAfter.length === toastsBefore, {
           boardChanged: JSON.stringify(after) !== before,
-          toasts: await ctx.toasts(),
+          toastsBefore,
+          toastsAfter,
         });
       },
     },
@@ -277,21 +286,34 @@ export default {
           !after.body.split(/\s+/).includes("drag-over");
         if (!cleared) return ok(false, { step: "markers after release", after });
 
-        // a ticked card that is also the drop target carries both states
+        // A ticked card that is also the drop target carries both states.
+        //
+        // Ctrl must be HELD for the whole gesture: releasing it clears the
+        // selection (app.js:2215-2220 `releaseCtrl` → `ui.selection.clear()`),
+        // which `e-selection-06` asserts as required behaviour. So the tick is
+        // read mid-gesture, while Ctrl is still down — asserting it after a
+        // release would be asserting something the reference cannot do.
         await ctx.hold("Control");
         await ctx.clickCard("c-drawer");
-        await ctx.release("Control");
+        // Both states must be read INSIDE the midway hook, while the pointer is
+        // still parked over the target: `drag()` releases the mouse when it
+        // returns, and the release clears every drop marker. Reading after the
+        // call would assert against a cleaned-up DOM.
+        let midGestureClass = "";
+        let picked = null;
         await drag(ctx, "c-graph", await pointAt(ctx, "c-drawer", 0.5, 0.25), async () => {
           await ctx.waitFrames();
+          midGestureClass = await ctx.page.evaluate(
+            () => document.querySelector('.card[data-card-id="c-drawer"]')?.className ?? ""
+          );
+          picked = await ctx.attr(sel.card("c-drawer"), "data-picked");
         });
-        const picked = await ctx.attr(sel.card("c-drawer"), "data-picked");
-        const cls = (await ctx.page.evaluate(
-          () => document.querySelector('.card[data-card-id="c-drawer"]').className
-        )).split(/\s+/);
-        // the drop landed: assert the tick survived the move too
+        const cls = midGestureClass.split(/\s+/);
+        await ctx.release("Control");
+        // the drop landed: the board records where the card actually went
         const columns = await ctx.storedColumns();
         return ok(cls.includes("drop-before") && picked === "1", {
-          midGestureClass: cls.join(" "),
+          midGestureClass,
           dataPicked: picked,
           columns,
         });
@@ -306,32 +328,61 @@ export default {
       name: "a group drag moves every ticked card, and only the grabbed card is a blind spot",
       run: async (ctx) => {
         await ctx.freshBoard();
-        // tick two cards in col-todo
+        // Tick two cards in col-todo. Ctrl is held for the WHOLE gesture:
+        // releasing it clears the selection (app.js:2215-2220), so a released
+        // Ctrl leaves nothing for the group drag to carry — and e-selection-06
+        // asserts that release-clears, so the tick cannot be made to persist.
         await ctx.hold("Control");
+        // the port commits select-mode on the next render; wait until the mode
+        // is observable before the first tick-click, exactly as `holdCtrl` does
+        // in the e-selection module — same behaviour, no lost click
+        await ctx.waitFor(() => document.documentElement.dataset.selectMode === "1");
         await ctx.clickCard("c-graph");
         await ctx.clickCard("c-cycle");
-        await ctx.release("Control");
         const picked = await ctx.count("#board .card[data-picked]");
         if (picked !== 2) return ok(false, { step: "ticking", picked });
 
-        // mid-gesture: hovering over c-cycle — the other group member — must
-        // still mark it, because only the grabbed card is excluded
+        // Mid-gesture: hovering over c-cycle — the other group member — must
+        // still mark it, because only the grabbed card is excluded. Reading the
+        // landmark must not mutate the board, so this pass is ABANDONED with
+        // Escape (the D6 hatch) rather than released: a release over a
+        // same-column member would complete a drop and run the group path.
         let mid = null;
-        await drag(ctx, "c-graph", await pointAt(ctx, "c-cycle", 0.5, 0.5), async () => {
+        const body = await ctx.page.locator(sel.columnBody("col-backlog")).boundingBox();
+        const dropAt = { x: body.x + body.width / 2, y: body.y + body.height - 10 };
+        const before = await ctx.storedColumns();
+        {
+          const from = await ctx.cardPoint("c-graph");
+          const over = await pointAt(ctx, "c-cycle", 0.5, 0.5);
+          await ctx.page.mouse.move(from.x, from.y);
+          await ctx.page.mouse.down();
+          for (let i = 1; i <= 4; i++) {
+            await ctx.page.mouse.move(from.x + i * 4, from.y + i * 4);
+          }
+          await ctx.page.mouse.move(over.x, over.y, { steps: 10 });
           await ctx.waitFrames();
           mid = await ctx.page.evaluate(() => ({
             grabbed: document.querySelector('.card[data-card-id="c-graph"]').className,
             member: document.querySelector('.card[data-card-id="c-cycle"]').className,
           }));
-        });
+          // abandon: no drop, no mutation
+          await ctx.page.keyboard.press("Escape");
+          await ctx.page.mouse.up().catch(() => {});
+          await ctx.waitFrames();
+        }
+        const midUnmutated =
+          JSON.stringify(await ctx.storedColumns()) === JSON.stringify(before);
         const memberMarked = mid.member.split(/\s+/).some((c) => c.startsWith("drop-"));
         if (!memberMarked) return ok(false, { step: "landmark on group member", mid });
+        if (!midUnmutated) return ok(false, { step: "landmark pass mutated the board", before, after: await ctx.storedColumns() });
 
-        // release over col-backlog: the whole group travels
-        const body = await ctx.page.locator(sel.columnBody("col-backlog")).boundingBox();
-        await drag(ctx, "c-graph", { x: body.x + body.width / 2, y: body.y + body.height - 10 });
+        // The single gesture that counts: Ctrl still held, drop into a
+        // DIFFERENT column so the group path (moveSelectionTo) moves both
+        // members rather than reordering within one column.
+        await drag(ctx, "c-graph", dropAt);
         const columns = await ctx.storedColumns();
         const barGone = (await ctx.count(sel.cardsPicked)) === 0;
+        await ctx.release("Control");
         return ok(
           JSON.stringify(columns["col-todo"]) === JSON.stringify(["c-gate"]) &&
             JSON.stringify(columns["col-backlog"]) === JSON.stringify(["c-shell", "c-store", "c-graph", "c-cycle"]),

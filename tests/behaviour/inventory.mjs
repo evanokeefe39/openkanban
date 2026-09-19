@@ -203,10 +203,38 @@ export const FEATURE_CAPABILITY = {
 };
 
 /**
- * feature id → what it asserts. Cross-app only: these need both targets in one
- * process, because they compare the two apps rather than exercising one.
+ * RETIRED — the cross-app ledger (`REQUIRED_CROSS`, J1-J5), kept for the record.
+ *
+ * These ids existed to grade a PORT against the app it was ported from: they
+ * needed both targets in one process and compared the two apps rather than
+ * exercising one. With the React app now BEING the app and the vanilla build
+ * frozen as a reference, there is no second app to compare against, so the
+ * family no longer applies:
+ *
+ *   J1  a board written by the vanilla app loads unchanged in the React app
+ *       — a round-trip whose whole point was bidirectional compatibility during
+ *       the port. There is no longer a vanilla app expected to write boards;
+ *       the reference is frozen.
+ *   J2  a board written by the React app still loads in the vanilla app
+ *       — the other direction of the same round-trip. Same loss of premise.
+ *   J3  the two apps render identically at 375px, 1440px and 1920px
+ *       — a pixel comparison between two implementations. Once one app is the
+ *       app, "identical to the other one" is meaningless; the design contract
+ *       is asserted directly by the I-family instead.
+ *   J4  both apps expose the same state contract: ids, attributes and allowed values
+ *       — the shared-contract check for two coexisting apps. The contract itself
+ *       does not go away: it is now enforced by `tests/behaviour/dom.mjs`'s
+ *       selector/attribute table against the single remaining app.
+ *   J5  file:// is lost by the export and asserted as a documented loss, not discovered late
+ *       — asserted that the port gave up file:// support visibly. That loss is
+ *       accepted now; the app is served, and the claim is settled history.
+ *
+ * `tests/behaviour/crossapp.mjs` — the module that ran these — is deleted: it
+ * could only fail once the ledger it graded no longer existed. Do not silently
+ * delete this block: it is the documentation of what the port-era gate asked
+ * for that the single-app gate no longer does.
  */
-export const REQUIRED_CROSS = {
+export const RETIRED = {
   J1: "a board written by the vanilla app loads unchanged in the React app",
   J2: "a board written by the React app still loads in the vanilla app",
   J3: "the two apps render identically at 375px, 1440px and 1920px",

@@ -181,6 +181,11 @@ export default {
         const stillInTodo = (await ctx.cardIds("col-todo")).includes(KNOWN.twoBlockers);
         // cancelConfirm only returns after the dialog has closed, so reaching
         // here is the cancellation
+        // the gate names each blocker with no ticket number, matching the
+        // reference's own list (app.js:711: `${blocker.title} — ${column.name}`).
+        // The batch list is the one that carries `#N` (app.js:1350), so a prefix
+        // here is a divergence — assert the exact string, not a prefix-optional
+        // match, or the check cannot catch that regression.
         return ok(
           title === "BLOCKED CARD → GATED COLUMN" &&
             items.length === 2 &&
