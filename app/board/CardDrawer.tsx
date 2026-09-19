@@ -72,6 +72,38 @@ export function CardDrawer() {
     else if (!cardDialogOpen && dialog.open) dialog.close();
   }, [cardDialogOpen]);
 
+  /**
+   * A blur-commit that does not eat the click which caused it.
+   *
+   * Clicking a PRIORITY / CLEAR / label button while a text field holds focus
+   * fires the field's blur first, and committing there re-renders the drawer's
+   * controls between the click's mousedown and its mouseup — so Chromium
+   * composes no click at all and the user's press is silently lost. It takes two
+   * clicks to apply one, with nothing reporting the failure. (Found in the
+   * vanilla app and recorded in ISSUES.md; the port must not inherit it.)
+   *
+   * Deferring the commit by one frame lets the in-flight click finish composing
+   * before the re-render replaces the node it landed on. The pending commit is
+   * tracked in a ref so a close that arrives before the frame still flushes it —
+   * a deferred write that silently vanishes when the drawer shuts would be a
+   * worse bug than the one being fixed.
+   *
+   * Declared here, with the other hooks, and NOT beside the code that uses it:
+   * this component returns early when no card is open, so a hook placed after
+   * those returns changes the hook count between renders the moment a card is
+   * clicked — and React unmounts the whole tree instead of tolerating it. That
+   * regression showed up as "clicking a card makes the drawer disappear".
+   */
+  const pendingCommit = useRef<(() => void) | null>(null);
+  useEffect(
+    () => () => {
+      const flush = pendingCommit.current;
+      pendingCommit.current = null;
+      flush?.();
+    },
+    []
+  );
+
   if (!board) {
     return <dialog className="drawer" id="card-dialog" aria-labelledby="card-kicker" ref={ref} />;
   }
@@ -83,22 +115,34 @@ export function CardDrawer() {
 
   const commitCard = (mutate: (draft: Board) => void) => useBoardStore.getState().commit(mutate);
 
-  const patch = (fields: Partial<Card>) =>
-    commitCard((draft) => {
+  const deferredCommit = (mutate: (draft: Board) => void) => {
+    pendingCommit.current = () => commitCard(mutate);
+    requestAnimationFrame(() => {
+      const flush = pendingCommit.current;
+      pendingCommit.current = null;
+      flush?.();
+    });
+  };
+
+  const patch = (fields: Partial<Card>, deferred = false) => {
+    const mutate = (draft: Board) => {
       const card = draft.cards[target.id];
       if (!card) return;
       Object.assign(card, fields);
       card.updatedAt = new Date().toISOString();
-    });
+    };
+    if (deferred) deferredCommit(mutate);
+    else commitCard(mutate);
+  };
 
-  const updateTitle = (raw: string) => {
+  const updateTitle = (raw: string, deferred = false) => {
     const value = raw.trim().replace(/\s+/g, " ");
     if (!value) {
       pushToast("warn", "TITLE NOT CHANGED — A CARD NEEDS A TITLE");
       setTitle(target.title);
       return;
     }
-    patch({ title: value });
+    patch({ title: value }, deferred);
   };
 
   const flushFields = () => {
@@ -256,7 +300,9 @@ export function CardDrawer() {
             spellCheck={false}
             value={title}
             onChange={(event) => setTitle(event.currentTarget.value)}
-            onBlur={(event) => updateTitle(event.currentTarget.value)}
+            /* deferred: a click landing on a drawer control fires this blur first, and committing
+               here would rebuild that control before its mouseup (ISSUES.md) */
+            onBlur={(event) => updateTitle(event.currentTarget.value, true)}
           />
         </label>
         <label className="field">
@@ -268,7 +314,8 @@ export function CardDrawer() {
             spellCheck={false}
             value={notes}
             onChange={(event) => setNotes(event.currentTarget.value)}
-            onBlur={(event) => patch({ notes: event.currentTarget.value })}
+            /* deferred for the same reason as the title above */
+            onBlur={(event) => patch({ notes: event.currentTarget.value }, true)}
           />
         </label>
         <div className="field">
