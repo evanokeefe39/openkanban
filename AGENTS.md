@@ -3,11 +3,14 @@
 Read this before changing anything here. It is the project's operating manual: what the app is, the
 one rule that shapes it, how to run and verify it, and the conventions a change must follow.
 
-> **A port to React 19 / Next.js 16 is planned and takes precedence over new feature work on the
-> vanilla app.** The kickoff plan — phases, packages, invariants and risks — is
-> [`tasks/plans/next-react-port.md`](tasks/plans/next-react-port.md). Read that first if you are
-> starting the migration. Everything below describes the current, vanilla implementation, which
-> remains the reference until the port is verified.
+> **A port to React 19 / Next.js 16 is in progress on `feat/next-react-port` and takes precedence over
+> new feature work on the vanilla app.** Phase 0 (the static-export scaffold, with the vanilla app left
+> in place as the reference) and Phase 0.5 (the dual-target behaviour suite that decides whether the
+> port is correct) are built. Read [`tasks/plans/next-react-port.md`](tasks/plans/next-react-port.md)
+> for the phases and [`tasks/plans/react-port-validation.md`](tasks/plans/react-port-validation.md)
+> for the feature inventory, the DOM contract both apps are addressed through, and the ledger that
+> makes "no check was dropped" an assertion. Everything below describes the vanilla implementation,
+> which remains the reference until the port is verified.
 
 ## What this is
 
@@ -44,7 +47,19 @@ The consequences ripple through the code and are easy to break by accident:
 npm run serve     # dev server on :8080, no-cache (use this, not python -m http.server)
 npm run check     # syntax of every entry point + every var() resolves
 npm test          # the smoke suite: 31 checks, real browser, real page
+
+npm run build     # the port's static export -> out/ (also runs the TypeScript check)
+npm run behaviour # the dual-target behaviour suite, GATING on the vanilla app
+npm run behaviour:react   # the port's progress — report only until Phase 5
+npm run compare   # diff the two reports: green on vanilla + red on React = a named regression
 ```
+
+`npm run behaviour` is the port's acceptance gate and runs the same checks against both apps. It
+enforces a **coverage ledger**: an inventory feature with no covering check fails the run, and so does
+any of `tests/smoke.mjs`'s checks with no live successor. Two asymmetries are declared rather than
+hidden — the drag gesture can only be driven on the React target (Playwright cannot synthesise an HTML5
+`drop`) and `file://` only works on the vanilla one — and a deferred feature is printed, never counted
+as covered.
 
 On Windows, Playwright's pinned Chromium download fails on some machines. Run the suite with a
 system browser instead:
@@ -133,8 +148,17 @@ proof that a feature works.
 - The smoke suite drives the real page in a real browser. It reads computed styles, `dataset`
   attributes and `localStorage` directly, so it catches what a unit test cannot: a rule that exists
   but does not apply, an attribute the CSS does not match, a stored board that is not what the UI shows.
-- **New behaviour needs a check in `tests/smoke.mjs`.** A check that cannot fail is worse than no
-  check; assert the observable outcome, not the implementation.
+- **New behaviour needs a check in `tests/behaviour/`, not in `tests/smoke.mjs`.** The dual-target
+  suite is what the port is judged by; `smoke.mjs` is the legacy deploy gate, kept because every one of
+  its checks still has to map to a live successor. A check that cannot fail is worse than no check;
+  assert the observable outcome, not the implementation.
+- **A check that throws is not a check that failed.** They are separate statuses on purpose: a thrown
+  check is a broken selector or fixture, and the runner refuses to let a declared defect absorb one.
+  If a check errors, fix the check — do not add it to `KNOWN_DEFECTS`.
+- **`KNOWN_DEFECTS` is for measured app defects, keyed by check id.** Its entries are checks that
+  assert the *correct* behaviour and are red because the app does not meet it, printed with their
+  reason on every run. Adding an id without a measurement behind it, or loosening an assertion instead,
+  inverts the mechanism: the suite stops being able to fail.
 - **Never assert a pointer or focus invariant the browser does not guarantee.** One check spent
   several rounds failing on "holding D with no card hovered canes nothing" because focus — not the
   pointer — anchors the dependency chain. The app was right and the assertion was wrong.

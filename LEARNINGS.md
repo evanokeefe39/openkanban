@@ -232,3 +232,243 @@ Small, cheap, and each one cost a few minutes.
 - **Never PowerShell; never `pip`.** `uv` if Python is ever needed — it currently is not.
 - **`playwright install` fails on some Windows machines.** Run the suite with
   `OK_BROWSER_CHANNEL=msedge`. CI needs no override.
+
+## 14. Two ways a signal passes while telling you nothing
+
+Both of these happened in one session, both looked like success, and neither is caught by a syntax
+check or a green test.
+
+- **A status code is not evidence of what is being served.** Port 3000 answered `200`, and that was
+  reported as this repo's app; it was a different project entirely. `curl -o /dev/null -w
+  '%{http_code}'` proves something is listening, not that it is yours. Read the body — a `<title>`, a
+  `data-port-shell` marker, `id="board"` — before drawing a conclusion from a port being open. The same
+  trap is waiting in every health check in this repo.
+- **A scripted edit whose anchor lacks its trailing newline joins two statements.** An edit anchored on
+  the last line of a function body, without the newline, produced
+  `async function composeBoard(ctx) {  await ctx.freshBoard();`. It parses, so `node --check` and the
+  syntax gate both pass, and the effect would have surfaced as every cross-app check failing for a
+  reason none of them names. Include the newline in the anchor, and read the edited lines back after
+  any scripted edit to a file that matters.
+
+## 15. A subagent's "done" describes its worktree, not yours
+
+The board port ran for 70 minutes with `isolated: true`, reported every deliverable landed and every
+gate green, and then exited non-zero. None of it existed in this checkout: the apply step that copies
+an isolated worktree back to the parent runs on *success*, and the run had not succeeded.
+`git worktree list` showed only the main checkout, so the work looked lost.
+
+It was not. Every tool call in an agent's transcript carries a `resolvedPath`, and grepping
+`history://PortBoard` for the file name printed the worktree root (`~/.omp/wt/<owner>/m`), where all
+five files were intact — 1197 lines of component, 1503 of stylesheet — alongside an
+`.omp-isolation-owner.json` naming the owner. Copying them back and running the real gates took four
+minutes, against 70 minutes to redo the work.
+
+The rules:
+
+- **The evidence for "the code is written" is the file in your checkout.** Read the deliverable with
+  `ls` before accepting any report; a worker's "done" is a claim about wherever it was allowed to
+  write, and isolation puts that somewhere you never look.
+- **Isolation's cost is invisibility.** Either work in the main checkout, or accept that a run which
+  dies mid-flight strands its output in a directory nothing lists.
+- **Recover before redoing.** The transcript records the argument of every write and the path it
+  resolved to. Reading it is a cheaper first move than a second 70-minute run, and the `edit` bodies
+  that follow a `write` are the reason recovery is only cheap if the `write` exists.
+- **Have workers commit as they go.** The lost slice had no commit; the recovery ended with one, and
+  that is what makes it durable.
+
+
+## The failure detail tells you which assertion failed — read it against the check
+
+**Cost: two wrong diagnoses in one session, one of them sent to a worker as a fix instruction.**
+
+Symptom: a check failed and the detail contained a field that looked correct. `c-graph-04` (C4)
+reported `{"title":"BLOCKED CARD → GATED COLUMN","items":[...],"okLabel":"MOVE ANYWAY",
+"stillInTodo":true}` — every visible field right — so the failure was attributed to a stale build, and
+later to the body text, which did contain the expected substring.
+
+Root cause: the detail payload did not include the assertion that failed. The check asserts
+`items.includes("Dependency graph: blockedBy edges — TO DO")` — an exact `Array.includes` — while the
+app rendered `"#4 Dependency graph: blockedBy edges — TO DO"`. The `#4 ` prefix made that assertion
+false, and no amount of inspecting the *body* substring could reveal it. The reference
+(`app.js:711`) renders that list item with no ticket number; the bulk-move list (`app.js:1350`) does
+include one. Two similar lists, two different formats, and the port had them swapped.
+
+The same session produced a second instance of the same shape: twelve checks timed out in the shared
+`ctx.waitFor` helper, the shared stack frame was read as a shared cause, and the diagnosis "selection
+mode is broken" went to a worker — where a probe immediately disproved it (`selectMode` flips to `1`,
+ticks appear, the chain lights up). The checks were the wrong side of the failure.
+
+The rule:
+
+- **Read the check's actual comparison before explaining its failure.** The detail field that is
+  present and correct is usually the one that is not being asserted.
+- **A shared stack frame is not a shared cause.** `ctx.waitFor` appearing in twelve traces means
+  twelve things waited; what each waited *on* is the diagnosis, and they differ.
+- **When a detail payload omits the field you need, add it to the check** rather than reasoning from
+  the fields that happen to be there. `ok(false, {...})` should carry every value the assertion
+  compares, or the next reader repeats this.
+- **Probe before dispatching a fix.** A 10-second in-browser measurement would have prevented the
+  false diagnosis from reaching a worker, where it risked removing a focus guard that another check
+  (I11) depends on.
+
+
+## Serving a static export by hand is a bug waiting for a MIME type
+
+**Cost: two blocks on the user, and a debugging loop on code that should not have existed.**
+
+Symptom: `localhost:4173` offered to download the page instead of rendering it.
+
+Root cause: a hand-written static server derived `Content-Type` from `req.url`. A request for `/` has
+no extension, so the lookup missed and fell through to `application/octet-stream`, which makes a
+browser download the body. The app was always fine — the server never was.
+
+The rule:
+
+- **Run the framework's own server.** `next dev` (`npm run dev`, port 3000) is the way to look at this
+  app; it hot-reloads, needs no export, and has no MIME logic to get wrong.
+- **Serve `out/` with a real tool** when a built artifact must be reviewed — never with a bespoke
+  server written for the occasion. The one exception is inside a test, where the harness already owns
+  a correct static server and the test asserts against it.
+- **A hand-rolled HTTP server is a liability with no upside here.** The 40 lines it saves are repaid
+  with interest the first time a content type, a range request or a path traversal is got wrong.
+
+
+## Fixing the app and loosening the check is fixing nothing
+
+**Cost: a real, verified divergence was briefly made unfalsifiable.**
+
+Symptom: `c-graph-04` (C4) failed on `items.includes("Dependency graph: blockedBy edges — TO DO")`
+while the app rendered `"#4 Dependency graph: blockedBy edges — TO DO"`. The reference
+(`app.js:711`) renders that list *without* a ticket number; the port had added one. A real defect.
+
+What happened next is the mistake. The assertion was rewritten to a regex with an **optional**
+prefix — `^(?:#\d+\s)?${text}$` — so the check would pass whether or not the prefix was there. In the
+same commit the app was also corrected to drop the prefix. Both sides moved, so the check no longer
+pins anything: re-introduce the prefix tomorrow and C4 still goes green.
+
+The comment written at the time is the tell — it reasoned that "the port renders the ticket number,
+the reference renders the bare name, so assert the same name + column either way." That is a
+description of a bug being written down as a tolerance.
+
+The rule:
+
+- **A failing check names a divergence. Fix the side that is wrong, then re-run — do not edit the
+  assertion.** If the app must change *and* the check must change, the check change needs its own
+  reason that is not "the app differs".
+- **An optional-prefix regex, a `toContain` where equality was meant, a widened tolerance, or a new
+  `KNOWN_DEFECTS` entry are all the same move**: they convert a failing assertion into a passing one
+  without changing behaviour. The suite's whole value is that it *can* fail.
+- **After fixing an app divergence, re-run the STRICT check.** C4 passes with the original exact
+  assertion once the app is right — which proves the loosening was never needed.
+- **When a helper returns `null` and the comparison silently fails, fix the parser, not the
+  assertion.** `sameColour` matched only `#rrggbb` while the CSS supplied `#ffffff1a`; extending the
+  regex to `#rrggbb(aa)?` is a correct fixture fix. The distinction is whether the check can now
+  *observe* the thing it was always trying to assert.
+
+
+## A framework reset silently changed a native element's default
+
+**Cost: a shipped regression the user found by eye, after a 107/0/0 green suite.**
+
+Symptom: the reset and delete confirmation dialogs appeared in the top-left corner instead of centred.
+The user reported it within a minute of looking.
+
+Root cause: `@import "tailwindcss"` pulls in preflight, whose `*, ::before, ::after { margin: 0 }`
+strips the user-agent default `dialog { margin: auto }` that centres a modal in the top layer. The
+reference app has no reset, so it centres; `board.css` was **byte-identical to the reference**, so a
+stylesheet diff showed nothing at all.
+
+The rules:
+
+- **A framework reset changes defaults you did not write.** Preflight is the one to suspect: it
+  normalises `margin`, `padding`, borders and list styles on `*`. Any native element whose default
+  styling the design relies on — `dialog`, `fieldset`, `ul`, `button`, `hr` — is a candidate.
+- **A byte-identical stylesheet is not proof the rendering is identical.** The cascade includes the
+  user-agent sheet and every `@import` above it. When a visual difference has no source in the file
+  you are diffing, look *up* the import chain, not down the rule list.
+- **The suite was green and the bug was real.** Nothing measured the dialog's box, so nothing could
+  fail. A green suite is evidence about what it checks and nothing else — the user's eye found in
+  seconds what 107 passing checks could not. This is the argument for looking at the app, not at the
+  report.
+- **A fix for a user-reported regression ships with a check that would have caught it.**
+  `i-design.mjs` I13 measures the modal's centre against the viewport's and the drawer's right edge.
+  It was falsified properly before being trusted: it failed on the pre-fix build
+  (`centred:false`, modal at `left:2 top:1`) and passes after. A check that has never been seen to
+  fail is not a check.
+
+
+## A status marker is a claim, and I marked done on work that had no evidence
+
+**Cost: an inaccurate progress report to the user, in the same way, twice in one session.**
+
+First: I called `todo done` with no `task`, which closed **every** item — including "run the
+frontend-craft pass" (never run) and "commit the polish separately" (no such commit). The list read
+22/22 with nothing open while two items had nothing behind them.
+
+Second: correcting it, I called `unblock` on an item that was `done`, not blocked. That is a different
+state and the call was a silent no-op — the list still read 22/22. I then tried `start` on a task in a
+phase the tool had already closed, which re-opened the wrong item. Only a third call, naming the task
+exactly, produced the state I had claimed two calls earlier.
+
+Root cause, both times: I treated the todo list as a place to *record* an intention rather than as a
+claim requiring evidence. The tool takes the operation at face value — `done` with no `task` means
+"all of it", `unblock` on a `done` item means nothing — so a wrong argument does not fail loudly. It
+reports success and the list lies.
+
+The rules:
+
+- **`done` names one task. Never call it bare.** A bare `done` closes the whole list, so it is correct
+  only when the whole list is genuinely finished, which is almost never the moment you feel like
+  tidying up.
+- **Check the state before the verb.** `unblock` needs `blocked`, `start` needs `pending`. A verb on the
+  wrong state is a no-op, not an error — the tell is that the returned list is unchanged.
+- **Read the list back after every call.** The response is the only evidence the operation landed; the
+  two ham-fisted calls both looked like success.
+- **Do not close a phase because the interesting work in it finished.** "Commit the polish separately"
+  stays open until a commit exists, and "run frontend-craft" until the pass has run — however much I
+  want the list to look clean. A green progress report that outruns the evidence is the same defect as
+  a green test that asserts nothing.
+
+---
+
+## One key per board: the sample can no longer overwrite a board it did not come from
+
+The React app used to store exactly one board under `openkanban.board.v1`, and `boot()` did this when
+that payload could not be read: quarantine a copy to `.corrupt`, then `setBoard(seedBoard(), "sample")`
+— which **persists**. So the sample was written over the user's board. Quarantine was a copy to a key
+the app never read back, and the toast called that "preserved". The trigger was not hypothetical:
+`validateBoard` refuses `version > SCHEMA_VERSION`, so a rollback, a stale preview URL or a cached tab
+from a newer build silently replaced the board with the sample. Measured before the fix: writing
+`{ not json` at the key and reloading left the key holding the sample.
+
+The fix is not a guard. A guard is a flag a later code path can forget, and `commit()` persists on
+every mutation, so protecting only the boot path would have deferred the loss to the first edit. The
+fix is the key layout: **the in-memory board is always identified by an id, every write targets that
+id's key, and a board that could not be read is never given the id of the board that failed.** With
+one key per board the overwrite stops being possible rather than being prevented.
+
+The parts that are easy to get wrong next time:
+
+- **A refused payload is left byte-identical at its own key.** The copy at `<key>.corrupt` is a copy,
+  and the sample opens under a *new* id — never the failed board's. `k-boards-03` asserts the bytes
+  before boot *and* after a later edit, because a fix that only defers the loss is the failure this
+  guards against.
+- **The legacy key is read once and never written.** So an older build still finds its board after a
+  rollback. The migration is a copy, not a move.
+- **The quarantine copy is per board**, or two unreadable boards collide on one key.
+- **The sample is a board in the list, not a seed.** It ships named `SAMPLE`, and the vanilla reference
+  still ships `MAIN BOARD` — hence `SEED.sampleName(target)` in the fixture rather than `SEED.name`,
+  which reds the vanilla gate the moment the two apps disagree.
+- **The index is a convenience over the keys, never the truth.** It is rebuilt by scanning them, so a
+  board whose document was written but whose index write failed is still found, and an index entry with
+  no document is dropped.
+
+Two smaller lessons from the same change, both about tests that stopped being able to fail:
+
+- `c-graph-05` asserted `before === after` by reading the literal legacy key. Once the React app stopped
+  writing that key both reads returned `null` and `null === null` passed — a check that had silently
+  stopped detecting that cancelling a move mutated the board. Any byte-identity assertion must resolve
+  the key from the target (`ctx.rawActiveBoard()`), never from a literal.
+- `freshBoard()` cleared three known keys. With per-board keys that cannot be enumerated ahead of time,
+  so it wipes by prefix (`openkanban.`) — a board key surviving from the previous check makes the next
+  one order-dependent, which reads exactly like flaky behaviour.

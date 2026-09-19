@@ -1,0 +1,19 @@
+@import "tailwindcss";
+@import "./fonts.css";
+@import "./board.css";
+
+/*
+ * The design language lives in `board.css`, which carries the reference's
+ * `:root` tokens, the density scale and the display-toggle selectors verbatim.
+ * Every semantic class (`.card`, `.col-head`, `.chip`, `[data-chain]`, …)
+ * resolves exactly as it does in the reference app, which is what makes the
+ * screenshot comparison against it meaningful rather than approximate.
+ *
+ * `fonts.css` self-hosts JetBrains Mono, so the comparison does not depend on a
+ * CDN fetch and the app makes no network request at all.
+ *
+ * The Tailwind `@theme` token migration — re-exporting every `:root` token as a
+ * theme value so utilities can reference it by name — is the frontend-craft
+ * pass, not this one. Doing it here would rename tokens and move pixels, which
+ * would leave the fidelity commit proving nothing.
+ */
