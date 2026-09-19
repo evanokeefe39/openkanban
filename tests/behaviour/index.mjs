@@ -8,6 +8,7 @@ import gFilterView from "./g-filter-view.mjs";
 import hIoReset from "./h-io-reset.mjs";
 import iDesign from "./i-design.mjs";
 import iColour from "./i-colour.mjs";
+import kBoards from "./k-boards.mjs";
 
 /**
  * The per-target suite, in run order.
@@ -17,7 +18,8 @@ import iColour from "./i-colour.mjs";
  *
  * `i-design` and `i-colour` are two files rather than one because the design
  * invariants split cleanly in two: structure and geometry, and colour measured
- * against the floor.
+ * against the floor. `k-boards` is the board collection, a React-only capability
+ * the vanilla reference defers.
  */
 export const SUITES = [
   aBoot,
@@ -30,6 +32,7 @@ export const SUITES = [
   hIoReset,
   iDesign,
   iColour,
+  kBoards,
 ];
 
 /** Every check in the suite, flattened, for the ledger and for `--only`. */

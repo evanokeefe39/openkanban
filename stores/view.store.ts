@@ -26,6 +26,7 @@ import type { ViewOptions } from "@/lib/types";
 import { DEFAULT_VIEW, emptyFilterState } from "@/lib/format";
 import type { FilterState } from "@/lib/format";
 import { loadView, saveView } from "@/lib/storage";
+import { browserStorage } from "@/lib/local-storage";
 
 export interface ConfirmSpec {
   title: string;
@@ -53,6 +54,8 @@ interface ViewState {
   cardDialogOpen: boolean;
 
   settingsOpen: boolean;
+  /** The boards drawer — the collection's list. */
+  boardsOpen: boolean;
 
   /** Ctrl held: every card offers a tick. */
   selectMode: boolean;
@@ -81,6 +84,17 @@ interface ViewState {
   closeCard: () => void;
 
   setSettingsOpen: (open: boolean) => void;
+  setBoardsOpen: (open: boolean) => void;
+
+  /**
+   * Drop every piece of state that names something on the board being left.
+   *
+   * Called when the open document changes (import, opening or creating a
+   * board). The selection must go because it holds card ids from the board
+   * being left: without this the tick state and the bulk bar would survive into
+   * a board where those ids do not exist.
+   */
+  resetForDocumentChange: () => void;
 
   setSelectMode: (held: boolean) => void;
   togglePick: (cardId: string) => void;
@@ -96,8 +110,10 @@ interface ViewState {
 /** Persist view options, tolerating a failed write: presentation state is not
  *  worth an error path, but it must not take the session down either. */
 function persistView(view: ViewOptions): void {
+  const storage = browserStorage();
+  if (!storage) return;
   try {
-    saveView(window.localStorage, view);
+    saveView(storage, view);
   } catch {
     /* a failed write keeps the session value */
   }
@@ -117,6 +133,7 @@ export const useViewStore = create<ViewState>()((set, get) => ({
   cardDialogOpen: false,
 
   settingsOpen: false,
+  boardsOpen: false,
 
   selectMode: false,
   selection: new Set<string>(),
@@ -126,7 +143,9 @@ export const useViewStore = create<ViewState>()((set, get) => ({
   confirmSpec: null,
 
   bootView: () => {
-    const stored = loadView(window.localStorage);
+    const storage = browserStorage();
+    if (!storage) return;
+    const stored = loadView(storage);
     set({ view: stored.view, viewProblem: stored.problem });
     if (stored.problem) persistView(stored.view);
   },
@@ -182,6 +201,19 @@ export const useViewStore = create<ViewState>()((set, get) => ({
   closeCard: () => set({ cardDialogOpen: false, activeCardId: null }),
 
   setSettingsOpen: (open) => set({ settingsOpen: open }),
+  setBoardsOpen: (open) => set({ boardsOpen: open }),
+
+  resetForDocumentChange: () =>
+    set({
+      filters: emptyFilterState(),
+      filterOpen: false,
+      inlineAdd: null,
+      inlineValue: "",
+      activeCardId: null,
+      cardDialogOpen: false,
+      selection: new Set<string>(),
+      selectMode: false,
+    }),
 
   setSelectMode: (held) => set({ selectMode: held, ...(held ? {} : { selection: new Set<string>() }) }),
 

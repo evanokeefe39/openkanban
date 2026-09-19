@@ -28,7 +28,6 @@ export const REQUIRED = {
   A8: "a payload from a future schema version is refused, quarantined and reported",
   A9: "a board stored without card numbers is repaired in creation order, not quarantined",
   A10: "view options live in their own key and never in the board document",
-  A11: "settings reports the board's origin, card count and size",
   A12: "a write from another tab warns that the board changed elsewhere",
   A13: "storage being unavailable leaves the board usable in memory",
   A14: "the run raised no uncaught error and no failed request",
@@ -86,7 +85,7 @@ export const REQUIRED = {
   F3: "deleting a column holding cards moves them left and reports the count",
   F4: "deleting the last remaining column is refused",
   F5: "the gate and done flags toggle, and losing the last done flag is repaired",
-  F6: "the settings sections are separated and the storage section reads true",
+  F6: "the settings sections are separated and the storage lamp reads true",
   F7: "the board name is in the read-out row and the document title",
   F8: "the header counters describe the whole board, never the filtered view",
 
@@ -109,7 +108,6 @@ export const REQUIRED = {
   H7: "reset deletes every card and edge, keeps the columns, name and view options",
   H8: "reset takes a half-typed card in an open composer with it",
   H9: "an emptied board survives a reload, restarts numbering, and is not a dead end",
-  H10: "restoring the sample reports the sample as its origin and restores the seed spread",
 
   I1: "two board surfaces plus floating ink, with no third plane",
   I2: "one hover lift everywhere, and a card's hover changes only its background",
@@ -123,6 +121,17 @@ export const REQUIRED = {
   I10: "imported text reaches the DOM as text, never as markup",
   I11: "hotkeys are ignored while a text field or a dialog holds focus",
   I12: "reduced motion collapses animation and transition durations",
+  I13: "a modal is centred in the viewport and the drawer stays a right-hand sidebar",
+
+  K1: "a board saved under the old single key is adopted, and that key is left byte-identical",
+  K2: "every board is saved under its own key, so one board cannot overwrite another",
+  K3: "an unreadable board is left byte-identical at its key, before and after an edit",
+  K4: "a board from a future schema version is refused without its key being destroyed",
+  K5: "a corrupt index is rebuilt from the board keys themselves",
+  K6: "switching boards opens the other board and the index follows",
+  K7: "deleting a board removes exactly that board's key",
+  K8: "a new board is blank, with the five standard columns and no cards",
+  K9: "another tab's write to a different board does not warn; the open board's does",
 };
 
 /**
@@ -200,6 +209,15 @@ export const FEATURE_CAPABILITY = {
   D6: "pointer-drag",
   D7: "pointer-drag",
   D8: "pointer-drag",
+  K1: "board-collection",
+  K2: "board-collection",
+  K3: "board-collection",
+  K4: "board-collection",
+  K5: "board-collection",
+  K6: "board-collection",
+  K7: "board-collection",
+  K8: "board-collection",
+  K9: "board-collection",
 };
 
 /**
@@ -269,10 +287,18 @@ export const LEGACY = {
   "reset deletes every card and keeps the columns, in the file as well as the view": ["H7"],
   "the reset board survives a reload instead of re-seeding": ["H9"],
   "an empty board offers no sample control in the board area": ["H9"],
-  "settings reports where the board came from and how many cards it holds": ["A11"],
+  // A11 retired: the storage read-out was removed from both drawers (its KEY /
+  // SIZE / RECOVERY COPY detail is either in the boards list — each row shows
+  // its own key — or on the toolbar lamp). This legacy check's successor is the
+  // lamp assertions in A4 plus the boards-list rows in K6.
+  "settings reports where the board came from and how many cards it holds": ["A4", "K6"],
   "the settings sections are separated by dividers": ["F6"],
-  "one click in settings restores the sample board": ["H9", "H10"],
-  "a freshly restored sample is labelled as the sample": ["H10"],
+  // Both of these are H9 now: the restore runs from the empty-state control,
+  // and what it restores is asserted as the sample's own counters, name and
+  // spread. The settings sample path they were written against is gone — the
+  // sample is an ordinary board in the collection.
+  "one click in settings restores the sample board": ["H9"],
+  "a freshly restored sample is labelled as the sample": ["H9"],
   "C opens a new card in the first column with the caret in it": ["B4"],
   "the ticks are hidden until Ctrl is held": ["E1"],
   "every card offers a tick once Ctrl is held, and the board keeps its height": ["E2"],

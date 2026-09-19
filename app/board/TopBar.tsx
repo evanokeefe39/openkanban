@@ -4,8 +4,7 @@ import { useBoardStore } from "@/stores/board.store";
 import { useViewStore } from "@/stores/view.store";
 import { formatCounters } from "@/lib/format";
 import type { FilterState } from "@/lib/format";
-import { ChevIcon, DownloadIcon, FilterIcon, SlidersIcon, TrashIcon, UploadIcon } from "./icons";
-import { exportBoard } from "./transfer";
+import { ChevIcon, FilterIcon, GridIcon, SlidersIcon, TrashIcon } from "./icons";
 
 /** The badge count: chips across the four categories, plus a non-empty query. */
 function activeFilterCount(query: string, filters: FilterState): number {
@@ -20,9 +19,10 @@ function activeFilterCount(query: string, filters: FilterState): number {
 
 /**
  * The top bar: identity, the counters, the search field, the filter
- * disclosure, the storage lamp and the four document actions.
+ * disclosure, the storage lamp, and the two drawers. Import and export live in
+ * the boards drawer with the rest of the document-level actions.
  */
-export function TopBar({ onOpenReset, onOpenImport }: { onOpenReset: () => void; onOpenImport: () => void }) {
+export function TopBar({ onOpenReset }: { onOpenReset: () => void }) {
   const board = useBoardStore((state) => state.board);
   const lamp = useBoardStore((state) => state.lamp);
   const query = useViewStore((state) => state.filters.query);
@@ -31,6 +31,7 @@ export function TopBar({ onOpenReset, onOpenImport }: { onOpenReset: () => void;
   const setFilterQuery = useViewStore((state) => state.setFilterQuery);
   const setFilterOpen = useViewStore((state) => state.setFilterOpen);
   const setSettingsOpen = useViewStore((state) => state.setSettingsOpen);
+  const setBoardsOpen = useViewStore((state) => state.setBoardsOpen);
   const filterCount = activeFilterCount(query, filters);
 
   if (!board) return <header className="topbar" />;
@@ -87,13 +88,20 @@ export function TopBar({ onOpenReset, onOpenImport }: { onOpenReset: () => void;
         <span className="lamp-dot" aria-hidden="true" />
         <span id="storage-lamp-text">{lampText}</span>
       </span>
-      <button className="btn" id="btn-export" type="button" onClick={() => exportBoard()}>
-        <DownloadIcon />
-        EXPORT
-      </button>
-      <button className="btn" id="btn-import" type="button" onClick={onOpenImport}>
-        <UploadIcon />
-        IMPORT
+      <button
+        className="btn"
+        id="btn-boards"
+        type="button"
+        title="Every board saved in this browser, each under its own key"
+        onClick={() => {
+          // the reference closes the settings drawer before another opens
+          // (app.js:2127) — the boards drawer must not open underneath it
+          setSettingsOpen(false);
+          setBoardsOpen(true);
+        }}
+      >
+        <GridIcon />
+        BOARDS
       </button>
       <button
         className="btn"

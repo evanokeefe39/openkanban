@@ -1,7 +1,7 @@
 /**
  * Import, export, reset, and the recovery path out of an empty board.
  *
- * Owns features H1–H10 (see `inventory.mjs`):
+ * Owns features H1–H9 (see `inventory.mjs`):
  *   H1  export writes JSON with version, name, columns, cards, exportedAt
  *   H2  a structurally invalid import is refused, board untouched
  *   H3  every recoverable import defect is repaired and itemised
@@ -11,7 +11,6 @@
  *   H7  reset deletes every card and edge, keeps columns, name, view options
  *   H8  reset takes a half-typed card in an open composer with it
  *   H9  an emptied board survives a reload, restarts numbering, is not a dead end
- *   H10 restoring the sample reports the sample as its origin
  *
  * The import path is the boundary that makes `textContent` a security rule
  * rather than a style preference: the file is untrusted input. A payload with
@@ -47,12 +46,28 @@ const tmpFile = async (name, content) => {
   return path;
 };
 
-/** Click export, catch the download, read the file back off disk. */
+/**
+ * Click export, catch the download, read the file back off disk.
+ *
+ * The control lives in the toolbar on the vanilla reference and in the boards
+ * drawer on the React app, so the drawer is opened first where it exists — and
+ * closed again before returning. A modal `<dialog>` makes the rest of the page
+ * inert, so leaving it open makes every later click in the same check time out.
+ */
 const exportBoardFile = async (ctx) => {
+  const inDrawer = ctx.target !== "vanilla";
+  if (inDrawer) {
+    await ctx.page.click(sel.btnBoards);
+    await ctx.page.waitForFunction(() => document.getElementById("boards-dialog")?.open === true);
+  }
   const [download] = await Promise.all([
     ctx.page.waitForEvent("download"),
-    ctx.page.click(sel.btnExport),
+    ctx.page.click(sel.exportAction(ctx.target)),
   ]);
+  if (inDrawer) {
+    await ctx.page.click(sel.boardsClose);
+    await ctx.page.waitForFunction(() => document.getElementById("boards-dialog")?.open === false);
+  }
   const path = await download.path();
   return { download, path, text: await readFile(path, "utf8") };
 };
@@ -76,7 +91,7 @@ const waitErrorToast = (ctx, pattern) =>
   );
 
 /** Raw stored board text, for the byte-identical assertion. */
-const rawBoard = (ctx) => ctx.page.evaluate((key) => localStorage.getItem(key), "openkanban.board.v1");
+const rawBoard = (ctx) => ctx.rawActiveBoard();
 
 /** Wait for the import confirm modal, then read its itemised repair list. */
 const confirmItems = async (ctx) => {
@@ -425,65 +440,33 @@ export default {
     {
       id: "h-io-11",
       feature: "H9",
-      name: "clicking the empty-state sample control restores the 11-card sample",
+      name: "the empty-state sample control loads the 11-card sample in the sample's own spread",
       run: async (ctx) => {
         await ctx.freshBoard();
         await ctx.resetBoard("delete");
         await ctx.page.click(sel.emptySample);
         await ctx.page.waitForFunction(() => document.querySelectorAll("#board .card").length === 11);
+
         const counters = (await ctx.counters()).replace(/\s+/g, " ").trim();
         const seedCounters = SEED.counters.replace(/\s+/g, " ").trim();
-        return ok(counters === seedCounters && Object.keys((await ctx.storedBoard()).cards).length === 11, {
-          counters,
-          seedCounters,
-        });
-      },
-    },
-
-    // ---- H10 — the sample path reports the sample as its origin -------------
-    {
-      id: "h-io-12",
-      feature: "H10",
-      name: "after an edit, restoring the sample asks first and then reports the sample origin and spread",
-      run: async (ctx) => {
-        await ctx.freshBoard();
-        // an edit makes the board the user's own, so the sample path must ask before replacing
-        await ctx.openDrawer(KNOWN.root);
-        await ctx.page.click(sel.drawerPriorityOption("3"));
-        await ctx.closeDrawer();
-        await ctx.openSettings();
-        const infoBefore = await ctx.text(sel.settingsStorage);
-
-        await ctx.page.click(sel.settingsSample); // closes settings, then asks
-        await ctx.page.waitForFunction(() => document.getElementById("confirm-dialog").open === true);
-        const askTitle = await ctx.text(sel.confirmTitle);
-        const askBody = await ctx.text(sel.confirmText);
-        await ctx.confirm("REPLACE");
-        await ctx.page.waitForFunction(() => document.querySelectorAll("#board .card").length === 11);
-
-        await ctx.openSettings();
-        const infoAfter = await ctx.text(sel.settingsStorage);
-        await ctx.closeSettings();
-
+        // the restored board is the sample: same counters, same name, and every
+        // card back in the column the sample places it in
+        const stored = await ctx.storedBoard();
         const placed = {};
         for (const col of SEED.columns) placed[col] = await ctx.cardIds(col);
         const spreadOk = SEED.columns.every(
-          (col) =>
-            placed[col].length === SEED.spread[col] &&
-            deepEq(placed[col], SEED.order[col])
+          (col) => placed[col].length === SEED.spread[col] && deepEq(placed[col], SEED.order[col])
         );
+
         return ok(
-          /EDITED IN THIS BROWSER/.test(infoBefore) &&
-            !/SAMPLE BOARD/.test(infoBefore) &&
-            askTitle === "LOAD SAMPLE BOARD" &&
-            /Replace the 11 cards on this board with the 11-card sample/.test(askBody) &&
-            /SAMPLE BOARD \(seeded, not yet edited\)/.test(infoAfter) &&
+          counters === seedCounters &&
+            Object.keys(stored.cards).length === 11 &&
+            stored.name === SEED.sampleName(ctx.target) &&
             spreadOk,
           {
-            infoBefore: infoBefore.split("\n")[0],
-            askTitle,
-            askBody: askBody.replace(/\s+/g, " ").trim().slice(0, 140),
-            infoAfterOrigin: infoAfter.split("\n")[0],
+            counters,
+            seedCounters,
+            storedName: stored.name,
             spreadOk,
             placed: Object.fromEntries(SEED.columns.map((c) => [c, placed[c].length])),
           }

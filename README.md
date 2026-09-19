@@ -68,7 +68,7 @@ The `MOVE TO` row in the card drawer is the keyboard path for moving a card, and
 
 ## Where your data lives
 
-Two `localStorage` keys, deliberately separate:
+The vanilla app (`index.html`) keeps two `localStorage` keys, deliberately separate:
 
 | Key | Holds | Notes |
 | --- | --- | --- |
@@ -77,6 +77,24 @@ Two `localStorage` keys, deliberately separate:
 | `openkanban.view.v1` | Density and the six display toggles | Per-browser preference; importing a board must not rewrite it |
 
 A stored board is validated on load and repaired where it can be (a document saved without card numbers gets numbers in creation order, and says so). Anything unreadable is quarantined under `<key>.corrupt` and a fresh board is seeded, so a bad payload costs you a warning, not a silent wipe of the good copy.
+
+The React app keeps a **collection** of boards instead, one key per board, because with a single key any write to "the board" is a write to the only board there is — which is how an unreadable payload came to be replaced by the sample:
+
+| Key | Holds | Notes |
+| --- | --- | --- |
+| `openkanban.boards.v1` | The index: `{version, activeId, ids}` | Which boards exist and which is open. Rebuildable by scanning the keys, so losing it loses only the order |
+| `openkanban.boards.v1.<id>` | One board document | The unit export writes and import replaces |
+| `openkanban.boards.v1.<id>.corrupt` | That board's unparseable payload | Per board, so two unreadable boards cannot collide |
+| `openkanban.view.v1` | Density and the six display toggles | Shared, as above |
+
+Its guarantees, all asserted in `tests/behaviour/k-boards.mjs`:
+
+- a board that cannot be read is left **byte-identical** at its own key, before and after any later edit — a copy goes to `<key>.corrupt` and a sample opens under a *new* id, so the failed payload is never given the sample's id and never overwritten;
+- a board from a **newer schema** (an older build after a rollback) is refused the same way rather than destroyed;
+- a board saved by the vanilla app under `openkanban.board.v1` is **adopted** into the collection on first load, and that key is left untouched — so opening an older build still finds it;
+- a corrupt index is rebuilt from the board keys themselves.
+
+One consequence worth knowing: the shipped sample is a **board in the list** named `SAMPLE`, not a seed that overwrites whatever is stored.
 
 ## Tests and CI
 

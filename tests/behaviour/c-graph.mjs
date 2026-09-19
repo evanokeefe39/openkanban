@@ -29,7 +29,6 @@
 import { ok } from "./harness.mjs";
 import { sel, SEED, KNOWN } from "./dom.mjs";
 
-const BOARD_KEY = "openkanban.board.v1";
 const sortIds = (ids) => [...ids].sort();
 const sameIds = (a, b) => JSON.stringify(sortIds(a)) === JSON.stringify(sortIds(b));
 /** The exact key set a stored card carries — `blocked` must never be one of them. */
@@ -205,9 +204,9 @@ export default {
       run: async (ctx) => {
         await ctx.freshBoard();
         await moveTo(ctx, KNOWN.twoBlockers, "col-progress");
-        const before = await ctx.page.evaluate((key) => localStorage.getItem(key), BOARD_KEY);
+        const before = await ctx.rawActiveBoard();
         await ctx.cancelConfirm();
-        const after = await ctx.page.evaluate((key) => localStorage.getItem(key), BOARD_KEY);
+        const after = await ctx.rawActiveBoard();
         // again, this time confirming
         await moveTo(ctx, KNOWN.twoBlockers, "col-progress");
         const confirmed = await ctx.confirm("MOVE ANYWAY");
@@ -419,7 +418,7 @@ export default {
         // seeded here because the gate refuses to write one through the UI.
         const board = await ctx.storedBoard();
         board.cards["c-shell"].blockedBy = ["c-store"];
-        await ctx.seedStorage({ [BOARD_KEY]: JSON.stringify(board) });
+        await ctx.seedActiveBoard(JSON.stringify(board));
         const stored = await ctx.storedBoard();
         const cycleSurvived = stored.cards["c-shell"].blockedBy.includes("c-store");
         await ctx.hold("d");

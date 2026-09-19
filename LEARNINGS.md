@@ -364,3 +364,111 @@ The rule:
   assertion.** `sameColour` matched only `#rrggbb` while the CSS supplied `#ffffff1a`; extending the
   regex to `#rrggbb(aa)?` is a correct fixture fix. The distinction is whether the check can now
   *observe* the thing it was always trying to assert.
+
+
+## A framework reset silently changed a native element's default
+
+**Cost: a shipped regression the user found by eye, after a 107/0/0 green suite.**
+
+Symptom: the reset and delete confirmation dialogs appeared in the top-left corner instead of centred.
+The user reported it within a minute of looking.
+
+Root cause: `@import "tailwindcss"` pulls in preflight, whose `*, ::before, ::after { margin: 0 }`
+strips the user-agent default `dialog { margin: auto }` that centres a modal in the top layer. The
+reference app has no reset, so it centres; `board.css` was **byte-identical to the reference**, so a
+stylesheet diff showed nothing at all.
+
+The rules:
+
+- **A framework reset changes defaults you did not write.** Preflight is the one to suspect: it
+  normalises `margin`, `padding`, borders and list styles on `*`. Any native element whose default
+  styling the design relies on — `dialog`, `fieldset`, `ul`, `button`, `hr` — is a candidate.
+- **A byte-identical stylesheet is not proof the rendering is identical.** The cascade includes the
+  user-agent sheet and every `@import` above it. When a visual difference has no source in the file
+  you are diffing, look *up* the import chain, not down the rule list.
+- **The suite was green and the bug was real.** Nothing measured the dialog's box, so nothing could
+  fail. A green suite is evidence about what it checks and nothing else — the user's eye found in
+  seconds what 107 passing checks could not. This is the argument for looking at the app, not at the
+  report.
+- **A fix for a user-reported regression ships with a check that would have caught it.**
+  `i-design.mjs` I13 measures the modal's centre against the viewport's and the drawer's right edge.
+  It was falsified properly before being trusted: it failed on the pre-fix build
+  (`centred:false`, modal at `left:2 top:1`) and passes after. A check that has never been seen to
+  fail is not a check.
+
+
+## A status marker is a claim, and I marked done on work that had no evidence
+
+**Cost: an inaccurate progress report to the user, in the same way, twice in one session.**
+
+First: I called `todo done` with no `task`, which closed **every** item — including "run the
+frontend-craft pass" (never run) and "commit the polish separately" (no such commit). The list read
+22/22 with nothing open while two items had nothing behind them.
+
+Second: correcting it, I called `unblock` on an item that was `done`, not blocked. That is a different
+state and the call was a silent no-op — the list still read 22/22. I then tried `start` on a task in a
+phase the tool had already closed, which re-opened the wrong item. Only a third call, naming the task
+exactly, produced the state I had claimed two calls earlier.
+
+Root cause, both times: I treated the todo list as a place to *record* an intention rather than as a
+claim requiring evidence. The tool takes the operation at face value — `done` with no `task` means
+"all of it", `unblock` on a `done` item means nothing — so a wrong argument does not fail loudly. It
+reports success and the list lies.
+
+The rules:
+
+- **`done` names one task. Never call it bare.** A bare `done` closes the whole list, so it is correct
+  only when the whole list is genuinely finished, which is almost never the moment you feel like
+  tidying up.
+- **Check the state before the verb.** `unblock` needs `blocked`, `start` needs `pending`. A verb on the
+  wrong state is a no-op, not an error — the tell is that the returned list is unchanged.
+- **Read the list back after every call.** The response is the only evidence the operation landed; the
+  two ham-fisted calls both looked like success.
+- **Do not close a phase because the interesting work in it finished.** "Commit the polish separately"
+  stays open until a commit exists, and "run frontend-craft" until the pass has run — however much I
+  want the list to look clean. A green progress report that outruns the evidence is the same defect as
+  a green test that asserts nothing.
+
+---
+
+## One key per board: the sample can no longer overwrite a board it did not come from
+
+The React app used to store exactly one board under `openkanban.board.v1`, and `boot()` did this when
+that payload could not be read: quarantine a copy to `.corrupt`, then `setBoard(seedBoard(), "sample")`
+— which **persists**. So the sample was written over the user's board. Quarantine was a copy to a key
+the app never read back, and the toast called that "preserved". The trigger was not hypothetical:
+`validateBoard` refuses `version > SCHEMA_VERSION`, so a rollback, a stale preview URL or a cached tab
+from a newer build silently replaced the board with the sample. Measured before the fix: writing
+`{ not json` at the key and reloading left the key holding the sample.
+
+The fix is not a guard. A guard is a flag a later code path can forget, and `commit()` persists on
+every mutation, so protecting only the boot path would have deferred the loss to the first edit. The
+fix is the key layout: **the in-memory board is always identified by an id, every write targets that
+id's key, and a board that could not be read is never given the id of the board that failed.** With
+one key per board the overwrite stops being possible rather than being prevented.
+
+The parts that are easy to get wrong next time:
+
+- **A refused payload is left byte-identical at its own key.** The copy at `<key>.corrupt` is a copy,
+  and the sample opens under a *new* id — never the failed board's. `k-boards-03` asserts the bytes
+  before boot *and* after a later edit, because a fix that only defers the loss is the failure this
+  guards against.
+- **The legacy key is read once and never written.** So an older build still finds its board after a
+  rollback. The migration is a copy, not a move.
+- **The quarantine copy is per board**, or two unreadable boards collide on one key.
+- **The sample is a board in the list, not a seed.** It ships named `SAMPLE`, and the vanilla reference
+  still ships `MAIN BOARD` — hence `SEED.sampleName(target)` in the fixture rather than `SEED.name`,
+  which reds the vanilla gate the moment the two apps disagree.
+- **The index is a convenience over the keys, never the truth.** It is rebuilt by scanning them, so a
+  board whose document was written but whose index write failed is still found, and an index entry with
+  no document is dropped.
+
+Two smaller lessons from the same change, both about tests that stopped being able to fail:
+
+- `c-graph-05` asserted `before === after` by reading the literal legacy key. Once the React app stopped
+  writing that key both reads returned `null` and `null === null` passed — a check that had silently
+  stopped detecting that cancelling a move mutated the board. Any byte-identity assertion must resolve
+  the key from the target (`ctx.rawActiveBoard()`), never from a literal.
+- `freshBoard()` cleared three known keys. With per-board keys that cannot be enumerated ahead of time,
+  so it wipes by prefix (`openkanban.`) — a board key surviving from the previous check makes the next
+  one order-dependent, which reads exactly like flaky behaviour.

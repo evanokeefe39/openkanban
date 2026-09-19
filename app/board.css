@@ -1190,6 +1190,11 @@ dialog {
   background: var(--ink-bg);
   border: 1px solid var(--line-strong);
   padding: 0;
+  /* The reference relies on the browser's default `dialog { margin: auto }` to centre a modal.
+     Tailwind's preflight resets `* { margin: 0 }`, which pins it to the top-left instead. State it
+     explicitly so the modal is centred whether or not a reset is loaded. `.drawer` overrides this
+     below (`margin: 0 0 0 auto`) — that is deliberate; the sidebar is not a centred modal. */
+  margin: auto;
 }
 dialog::backdrop {
   background: rgba(0, 0, 0, 0.62);
@@ -1416,6 +1421,51 @@ dialog::backdrop {
 .col-row .input {
   padding: 4px 6px;
   font-size: 11px;
+}
+
+/* boards drawer rows — `.col-row` is the drawer list-row primitive, reused
+   rather than paralleled by a second class. No colour, no radius, no shadow:
+   the active board is marked by weight, not by a hue. */
+/* the list scrolls inside a capped box so a long collection cannot grow the
+   sidebar past the viewport and take the page with it. The cap is a share of the
+   drawer's own height, not a pixel count, so it holds at any viewport. */
+#boards-list {
+  max-height: 45dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+/* four tracks for the four children: the identity block (name over key) is the
+   one flexible track, so the key ellipsises inside it; the meta cell and the two
+   buttons keep their natural size. The key sits on its own line under the name
+   because it is a long uniform value — beside the name it either crowded the row
+   or collapsed to nothing, which the earlier measurement showed as width 0. */
+#boards-list .col-row {
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+}
+.board-ident {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.board-key {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-foreground-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+#boards-list .board-name-cell,
+#boards-list .board-meta-cell {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.col-row[data-active="1"] .board-name-cell {
+  font-weight: 700;
 }
 .check {
   display: inline-flex;

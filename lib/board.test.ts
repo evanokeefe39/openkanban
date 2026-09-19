@@ -9,7 +9,7 @@ const clone = (board: Board): Board => JSON.parse(JSON.stringify(board));
 describe('seedBoard', () => {
   it('matches the SEED fixture byte for byte (ids, numbers, order, edges, name)', () => {
     const board = seedBoard();
-    expect(board.name).toBe(SEED.name);
+    expect(board.name).toBe(SEED.sampleName('react'));
     expect(board.columns.map((c) => c.id)).toEqual(SEED.columns);
     for (const colId of SEED.columns) {
       const column = board.columns.find((c) => c.id === colId)!;

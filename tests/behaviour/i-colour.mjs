@@ -298,7 +298,7 @@ export default {
           text("column add control", sel.addButton("col-backlog")),
           text("dependency hint", sel.depsIndicator),
           text("priority legend label", `${sel.prioLegend} .prio-legend-label`),
-          text("export button label", sel.btnExport),
+          text("toolbar button label", sel.btnOnPage),
         ]);
 
         // A filter brings the +N HIDDEN badge and the pane's own vocabulary up.

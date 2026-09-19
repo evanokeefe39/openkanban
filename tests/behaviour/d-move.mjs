@@ -106,7 +106,7 @@ export default {
         // write a deliberately stale updatedAt so the stamp cannot race the clock
         const board = await ctx.storedBoard();
         board.cards["c-store"].updatedAt = "2020-01-01T00:00:00.000Z";
-        await ctx.seedStorage({ "openkanban.board.v1": JSON.stringify(board) });
+        await ctx.seedActiveBoard(JSON.stringify(board));
         const before = await ctx.storedCard("c-store");
 
         await ctx.openDrawer("c-store"); // blocked, but col-todo is not gated: no prompt

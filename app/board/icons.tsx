@@ -68,6 +68,17 @@ export function TrashIcon() {
   );
 }
 
+export function GridIcon() {
+  return (
+    <svg className="icon lucide-layout-grid" viewBox="0 0 24 24" {...strokeProps} aria-hidden="true">
+      <rect width="7" height="7" x="3" y="3" rx="0" />
+      <rect width="7" height="7" x="14" y="3" rx="0" />
+      <rect width="7" height="7" x="14" y="14" rx="0" />
+      <rect width="7" height="7" x="3" y="14" rx="0" />
+    </svg>
+  );
+}
+
 export function ChevIcon() {
   return (
     <svg className="chev" viewBox="0 0 10 6" aria-hidden="true">

@@ -17,8 +17,6 @@
 import * as H from "./harness.mjs";
 import { sel } from "./dom.mjs";
 
-const CLEARED = { [H.BOARD_KEY]: null, [H.CORRUPT_KEY]: null, [H.VIEW_KEY]: null };
-
 export function createCtx(session) {
   const { page, base, target } = session;
   const entry = target.entry;
@@ -29,15 +27,22 @@ export function createCtx(session) {
     page,
     base,
     target: target.id,
+    /** The target's entry path — `/index.html` on vanilla, `/` on the export. */
+    entry,
     errors: session.errors,
     sel,
 
     // ---- navigation and storage ---------------------------------------------
     settle,
-    /** A cold start: storage cleared, then the app booted — the seed board. */
+    /**
+     * A cold start: every key the app owns removed, then the app booted — the
+     * seed board. The wipe is by prefix because a per-board key set cannot be
+     * enumerated ahead of time, and a board key surviving from the previous
+     * check would make the next one order-dependent.
+     */
     freshBoard: async () => {
       if (!page.url().startsWith(base)) await settle();
-      await H.setStorage(page, CLEARED);
+      await H.clearAppStorage(page);
       await settle();
     },
     /** Put values in storage (or `null` to remove a key) and boot on them. */
@@ -50,6 +55,22 @@ export function createCtx(session) {
     storedBoard: () => H.storedBoard(page),
     storedView: () => H.storedView(page),
     screenshot: (name) => H.screenshot(page, name),
+
+    // ---- the board-collection layout -----------------------------------------
+    /** The key the open board's document lives under, on either target. */
+    activeBoardKey: () => H.activeBoardKey(page),
+    /** Where the open board's unreadable copy is kept. */
+    quarantineKey: async () => `${await H.activeBoardKey(page)}.corrupt`,
+    /** The open board's raw stored bytes, for a byte-identical assertion. */
+    rawActiveBoard: async () => {
+      const key = await H.activeBoardKey(page);
+      return page.evaluate((k) => localStorage.getItem(k), key);
+    },
+    /** Seed bytes at the open board's key (and clear its copy), then boot. */
+    seedActiveBoard: async (raw) => {
+      const key = await H.activeBoardKey(page);
+      await ctx.seedStorage({ [key]: raw, [`${key}.corrupt`]: null });
+    },
 
     // ---- waiting and reading ------------------------------------------------
     waitFrames: (frames) => H.waitFrames(page, frames),
@@ -116,6 +137,20 @@ export function createCtx(session) {
     closeSettings: async () => {
       await page.click(sel.settingsClose);
       await page.waitForFunction(() => document.getElementById("settings-dialog").open === false);
+    },
+    /**
+     * The boards drawer — the React app's board list.
+     *
+     * React-only: the frozen vanilla reference has one board and no list, so
+     * checks that drive it declare the `board-collection` capability.
+     */
+    openBoards: async () => {
+      await page.click(sel.btnBoards);
+      await page.waitForFunction(() => document.getElementById("boards-dialog").open === true);
+    },
+    closeBoards: async () => {
+      await page.click(sel.boardsClose);
+      await page.waitForFunction(() => document.getElementById("boards-dialog").open === false);
     },
     openFilters: async () => {
       await page.click(sel.filterToggle);

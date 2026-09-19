@@ -79,33 +79,17 @@ export function StatusRow() {
   );
 }
 
-/** Put the sample back. Confirm-gated when the board has cards, per the
- *  reference's loadSampleBoard (app.js:1882-1904): the empty-board read-out
- *  row restores without asking, the settings button asks first. */
+/**
+ * Put the sample cards into this board.
+ *
+ * Reached only from the empty-state read-out row, so it never has cards to
+ * replace and never needs to ask. The sample is otherwise an ordinary board in
+ * the collection: this control exists because an empty board is a dead end
+ * without it, not as a second way to get the demo content.
+ */
 export function loadSampleBoard(): void {
-  const board = useBoardStore.getState().board;
-  const current = board ? Object.keys(board.cards).length : 0;
-  const apply = () => {
-    useBoardStore.getState().setBoard(seedBoard(), "sample");
-    useViewStore.getState().closeCard();
-    useViewStore.getState().closeInline();
-    pushToast("info", "SAMPLE BOARD RESTORED");
-  };
-  if (!current) {
-    apply();
-    return;
-  }
-  const body = (
-    <div>
-      <p>{`Replace the ${current} card${current === 1 ? "" : "s"} on this board with the 11-card sample?`}</p>
-      <p>Your columns, board name and view options are kept.</p>
-    </div>
-  );
-  useViewStore.getState().askConfirm({
-    title: "LOAD SAMPLE BOARD",
-    body,
-    okLabel: "REPLACE",
-    danger: false,
-    onOk: apply,
-  });
+  useBoardStore.getState().setBoard(seedBoard(), "sample");
+  useViewStore.getState().closeCard();
+  useViewStore.getState().closeInline();
+  pushToast("info", "SAMPLE BOARD LOADED");
 }

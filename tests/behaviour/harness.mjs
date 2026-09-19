@@ -23,9 +23,26 @@ import { chromium } from "playwright";
 export const ROOT = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 export const ARTIFACTS = join(ROOT, "tests", ".artifacts");
 
-export const BOARD_KEY = "openkanban.board.v1";
-export const CORRUPT_KEY = `${BOARD_KEY}.corrupt`;
+/**
+ * The storage layout, as two families rather than one key.
+ *
+ * The vanilla reference keeps a single board under `openkanban.board.v1`. The
+ * React app stores a collection: an index under `openkanban.boards.v1` naming
+ * the boards, and each board document under `openkanban.boards.v1.<id>`, with
+ * an unreadable payload copied to `<board key>.corrupt`. The legacy key is
+ * still READ by the React app (a one-way migration) and its corrupt sibling is
+ * still the copy target on that path, which is why both remain here.
+ *
+ * `storedBoard` resolves whichever layout the target uses, so a check that only
+ * cares about "the board the app has open" needs no target branch.
+ */
+export const LEGACY_BOARD_KEY = "openkanban.board.v1";
+export const INDEX_KEY = "openkanban.boards.v1";
+export const BOARD_KEY_PREFIX = "openkanban.boards.v1.";
 export const VIEW_KEY = "openkanban.view.v1";
+
+/** The storage key a board document lives under, from its id. */
+export const boardKey = (id) => `${BOARD_KEY_PREFIX}${id}`;
 
 /** Every target the suite knows how to drive. */
 export const TARGETS = {
@@ -250,8 +267,57 @@ export async function settle(page, base, { entry = "/index.html", timeout = DEFA
 // Read helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * The board the target has open.
+ *
+ * On the React app the index names it, so the key is read from storage rather
+ * than assumed — a check for "the open board" must not care which board that
+ * is. On the vanilla app there is no index and the single legacy key is the
+ * answer, so the fallback IS the vanilla path: one implementation, no branch.
+ */
 export const storedBoard = (page) =>
-  page.evaluate((key) => JSON.parse(localStorage.getItem(key) || "null"), BOARD_KEY);
+  page.evaluate(
+    ({ indexKey, prefix, legacy }) => {
+      let activeId = null;
+      try {
+        activeId = JSON.parse(localStorage.getItem(indexKey) || "null")?.activeId ?? null;
+      } catch {
+        activeId = null;
+      }
+      return JSON.parse(localStorage.getItem(activeId ? `${prefix}${activeId}` : legacy) || "null");
+    },
+    { indexKey: INDEX_KEY, prefix: BOARD_KEY_PREFIX, legacy: LEGACY_BOARD_KEY }
+  );
+
+/** The key the open board's document lives under, resolved the same way. */
+export const activeBoardKey = (page) =>
+  page.evaluate(
+    ({ indexKey, prefix, legacy }) => {
+      let activeId = null;
+      try {
+        activeId = JSON.parse(localStorage.getItem(indexKey) || "null")?.activeId ?? null;
+      } catch {
+        activeId = null;
+      }
+      return activeId ? `${prefix}${activeId}` : legacy;
+    },
+    { indexKey: INDEX_KEY, prefix: BOARD_KEY_PREFIX, legacy: LEGACY_BOARD_KEY }
+  );
+
+/**
+ * Remove every key the app owns.
+ *
+ * A per-board key set cannot be enumerated ahead of time, so the wipe is by
+ * prefix rather than by a hand-maintained list: a board key left behind by the
+ * previous check would make the next one order-dependent, which is the one
+ * thing a check must never be.
+ */
+export const clearAppStorage = (page) =>
+  page.evaluate(() =>
+    Object.keys(localStorage)
+      .filter((key) => key.startsWith("openkanban."))
+      .forEach((key) => localStorage.removeItem(key))
+  );
 
 export const storedView = (page) =>
   page.evaluate((key) => JSON.parse(localStorage.getItem(key) || "null"), VIEW_KEY);

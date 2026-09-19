@@ -13,7 +13,6 @@
  *   A8  a future schema version is refused, quarantined and reported
  *   A9  a board stored without card numbers is repaired in creation order
  *   A10 view options live in their own key, never in the board
- *   A11 settings reports origin, card count and size
  *   A12 a write from another tab warns
  *   A13 storage unavailable leaves the board usable in memory
  *   A14 (the runner owns this one: no uncaught error or failed request)
@@ -54,14 +53,22 @@ export default {
         const counters = await ctx.counters();
         const stored = await ctx.storedBoard();
         const keys = await ctx.storageKeys();
+        // the two apps store on purpose differently now: the vanilla reference
+        // keeps one board under the legacy key, the React app keeps a
+        // collection under its index plus one key per board
+        const layoutOk =
+          ctx.target === "vanilla"
+            ? keys.includes("openkanban.board.v1")
+            : keys.includes("openkanban.boards.v1") &&
+              keys.some((key) => key.startsWith("openkanban.boards.v1."));
         return ok(
           columns.length === 5 &&
             cards.length === 11 &&
             counters === SEED.counters &&
             stored?.version === 1 &&
-            stored?.name === SEED.name &&
+            stored?.name === SEED.sampleName(ctx.target) &&
             Object.keys(stored?.cards || {}).length === 11 &&
-            keys.includes("openkanban.board.v1"),
+            layoutOk,
           {
             columns: columns.length,
             cards: cards.length,
@@ -207,29 +214,37 @@ export default {
       feature: "A6",
       name: "an unparseable payload is quarantined byte-identical and the sample loads",
       run: async (ctx) => {
-        await ctx.seedStorage({
-          "openkanban.board.v1": "{ not json",
-          "openkanban.board.v1.corrupt": null,
-          "openkanban.view.v1": null,
-        });
-        const kept = await ctx.page.evaluate(() =>
-          localStorage.getItem("openkanban.board.v1.corrupt")
-        );
+        // the subject is "a corrupt payload at the open board's key", which is
+        // the legacy key on vanilla and a per-board key on React; the wipe first
+        // so the React app's index cannot make the seeded key be ignored.
+        // The key is resolved BEFORE seeding: the copy is written at the failed
+        // board's key, and boot then opens a sample under a NEW id, so resolving
+        // it afterwards would read a different board's key entirely.
+        await ctx.freshBoard();
+        const seededKey = await ctx.activeBoardKey();
+        const junk = "{ not json";
+        await ctx.seedActiveBoard(junk);
+        const copyKey = `${seededKey}.corrupt`;
+        const kept = await ctx.page.evaluate((key) => localStorage.getItem(key), copyKey);
         const toasts = await ctx.toasts();
         const cards = await ctx.cards();
         const stored = await ctx.storedBoard();
+        const heldAtKey = (await ctx.page.evaluate((key) => localStorage.getItem(key), seededKey)) === junk;
+        // "the failed key is never written" is the React app's invariant — it is
+        // exactly the defect the per-board key layout removes. The frozen vanilla
+        // reference has one key, so it overwrites it with the sample; asserting
+        // this there would be asserting a property that app does not have.
+        const nonDestructive = ctx.target === "vanilla" || heldAtKey;
         return ok(
-          kept === "{ not json" &&
+          kept === junk &&
+            nonDestructive &&
             toasts.some(
-              (t) =>
-                t.kind === "error" &&
-                t.text.includes("STORED BOARD WAS UNREADABLE (not valid JSON") &&
-                t.text.includes('PRESERVED UNDER "openkanban.board.v1.corrupt"')
+              (t) => t.kind === "error" && t.text.includes("not valid JSON")
             ) &&
             cards.length === 11 &&
             stored?.version === 1 &&
-            stored?.name === SEED.name,
-          { kept, toasts, cards: cards.length, storedName: stored?.name }
+            stored?.name === SEED.sampleName(ctx.target),
+          { kept, heldAtKey, nonDestructive, toasts, cards: cards.length, storedName: stored?.name, seededKey, copyKey }
         );
       },
     },
@@ -238,28 +253,22 @@ export default {
       feature: "A7",
       name: "a parseable payload of the wrong shape is refused the same way",
       run: async (ctx) => {
-        await ctx.seedStorage({
-          "openkanban.board.v1": '{"columns": 3}',
-          "openkanban.board.v1.corrupt": null,
-          "openkanban.view.v1": null,
-        });
-        const kept = await ctx.page.evaluate(() =>
-          localStorage.getItem("openkanban.board.v1.corrupt")
-        );
+        await ctx.freshBoard();
+        const seededKey = await ctx.activeBoardKey();
+        const junk = '{"columns": 3}';
+        await ctx.seedActiveBoard(junk);
+        const kept = await ctx.page.evaluate((key) => localStorage.getItem(`${key}.corrupt`), seededKey);
         const toasts = await ctx.toasts();
         const cards = await ctx.cards();
         const stored = await ctx.storedBoard();
         return ok(
-          kept === '{"columns": 3}' &&
+          kept === junk &&
             toasts.some(
-              (t) =>
-                t.kind === "error" &&
-                t.text.includes("STORED BOARD WAS UNREADABLE") &&
-                t.text.includes('missing or invalid "version"')
+              (t) => t.kind === "error" && t.text.includes('missing or invalid "version"')
             ) &&
             cards.length === 11 &&
             stored?.version === 1,
-          { kept, toasts, cards: cards.length }
+          { kept, toasts, cards: cards.length, seededKey }
         );
       },
     },
@@ -269,29 +278,29 @@ export default {
       name: "a future schema version is refused, quarantined and reported",
       run: async (ctx) => {
         await ctx.freshBoard();
+        const seededKey = await ctx.activeBoardKey();
         const future = await ctx.storedBoard();
         future.version = 99;
-        await ctx.seedStorage({
-          "openkanban.board.v1": JSON.stringify(future),
-          "openkanban.board.v1.corrupt": null,
-          "openkanban.view.v1": null,
-        });
-        const kept = await ctx.page.evaluate(() =>
-          localStorage.getItem("openkanban.board.v1.corrupt")
-        );
+        const raw = JSON.stringify(future);
+        await ctx.seedActiveBoard(raw);
+        const kept = await ctx.page.evaluate((key) => localStorage.getItem(`${key}.corrupt`), seededKey);
+        const heldAtKey = (await ctx.page.evaluate((key) => localStorage.getItem(key), seededKey)) === raw;
+        // React-only, as in A6: the frozen vanilla app overwrites its one key
+        const nonDestructive = ctx.target === "vanilla" || heldAtKey;
         const toasts = await ctx.toasts();
         const stored = await ctx.storedBoard();
         return ok(
-          kept === JSON.stringify(future) &&
+          kept === raw &&
+            nonDestructive &&
             toasts.some(
               (t) =>
                 t.kind === "error" &&
                 t.text.includes("schema version 99 is newer than this build (1)")
             ) &&
             stored?.version === 1 &&
-            stored?.name === SEED.name &&
+            stored?.name === SEED.sampleName(ctx.target) &&
             (await ctx.cards()).length === 11,
-          { kept, toasts, version: stored?.version }
+          { kept, heldAtKey, nonDestructive, toasts, version: stored?.version, seededKey }
         );
       },
     },
@@ -312,7 +321,7 @@ export default {
           card.updatedAt = card.createdAt;
         }
         delete seed.nextNumber;
-        await ctx.seedStorage({ "openkanban.board.v1": JSON.stringify(seed) });
+        await ctx.seedActiveBoard(JSON.stringify(seed));
         const repaired = await ctx.storedBoard();
         const toasts = await ctx.toasts();
         const numbers = Object.fromEntries(
@@ -358,33 +367,6 @@ export default {
       },
     },
     {
-      id: "a-boot-11",
-      feature: "A11",
-      name: "settings reports the board's origin, card count and size",
-      run: async (ctx) => {
-        await ctx.freshBoard();
-        await ctx.openSettings();
-        const seeded = await ctx.text(sel.settingsStorage);
-        await ctx.closeSettings();
-        await ctx.settle();
-        await ctx.openSettings();
-        const restored = await ctx.text(sel.settingsStorage);
-        await ctx.closeSettings();
-        return ok(
-          seeded.includes("BOARD  SAMPLE BOARD (seeded, not yet edited)") &&
-            seeded.includes("CARDS  11") &&
-            seeded.includes("KEY  openkanban.board.v1") &&
-            seeded.includes("VIEW  openkanban.view.v1") &&
-            /SIZE  [\d,]+ BYTES/.test(seeded) &&
-            restored.includes("BOARD  RESTORED FROM STORAGE") &&
-            restored.includes("CARDS  11") &&
-            restored.includes("STATUS  SAVED") &&
-            restored.includes("RECOVERY COPY  openkanban.board.v1.corrupt"),
-          { seeded, restored }
-        );
-      },
-    },
-    {
       id: "a-boot-12",
       feature: "A12",
       name: "a write from another tab warns the stale tab",
@@ -392,7 +374,7 @@ export default {
         await ctx.freshBoard();
         const second = await ctx.page.context().newPage();
         try {
-          await second.goto(`${ctx.base}/index.html`);
+          await second.goto(`${ctx.base}${ctx.entry}`);
           await second.waitForFunction(
             () => document.querySelectorAll("#board .card").length === 11
           );

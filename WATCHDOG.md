@@ -60,6 +60,15 @@ resolves to nothing, and a class with no rule simply does nothing. `tests/check-
 first; **the second needs a grep.** When a diff deletes a class from either side, check the other side
 by hand.
 
+**A Tailwind rule that silently changes a native element's default.** `@import "tailwindcss"` pulls in
+preflight, whose `*, ::before, ::after { margin: 0 }` strips the user-agent default
+`dialog { margin: auto }` — so every modal rendered at the top-left instead of centred, while
+`board.css` stayed **byte-identical to the reference** and a stylesheet diff showed nothing. The
+reference has no reset, which is why it centres. Any native element whose default styling the design
+relies on (`dialog`, `fieldset`, `ul`, `button`) is a candidate. The fix belongs in `board.css` as an
+explicit declaration, commented as deliberate. `i-design.mjs` I13 now measures the rendered box; a
+reviewer seeing a new `* { }` or preflight import should ask what default it removed.
+
 **A hover or selection handler that calls `render()`.** `applyChainHighlight()` and
 `applySelection()` patch the DOM in place precisely because a re-render resets each column's scroll
 position under the pointer and rebuilds the checkbox out from under a click. A refactor that
@@ -213,3 +222,27 @@ now exists?**
   this project's history did not survive re-measurement.
 - Prefer deleting an obsolete test to re-pinning it. A test that asserts the old wording of a
   behaviour is a liability once the behaviour is deliberately changed.
+
+## Reviewing a progress report
+
+A status list, a commit message and a "done" report are claims, and this project has produced several
+that outran their evidence. Check the claim against the artifact, not the phrasing.
+
+- **A progress list should be short of green.** If it reads fully closed, find the items that are
+  structurally incapable of being closed yet — a commit that does not exist, a pass that has not run,
+  a check whose fix was never observed failing. This happened here: a list read 22/22 while
+  "run frontend-craft" (never run) and "commit the polish separately" (no commit) were both marked
+  done. An operation on the wrong state (`done` with no task, `unblock` on a completed item) is a
+  silent no-op, so the list can lag or overstate without any error being raised.
+- **A fix with no failing case behind it is unproven.** Ask what the fix was observed to change. An
+  edit that makes a check pass, where that check also passed before the edit, has demonstrated
+  nothing — the load-dependent race in `f-columns-06` looked exactly like this, and the honest
+  evidence is the reproduction, not the green run.
+- **A green suite is evidence about what it checks and nothing else.** Two real defects lived through
+  a 107/0/0 run: the modal centring (no check measured a dialog's box) and the f-columns race (the
+  suite ran fast enough to hide it). The user found the first by looking at the app. Treat "the suite
+  is green" as one input, not as the conclusion.
+- **Cite the artifact, and cite it as what it is.** A suite number belongs to the run that produced
+  it and the target that run served; the behaviour runner boots its own ephemeral server against
+  `out/`, so it is not evidence about a dev server on another port. Say which artifact a number
+  describes.

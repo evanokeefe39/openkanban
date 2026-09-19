@@ -1,7 +1,7 @@
 /**
  * The structural half of the design invariants, measured on the rendered page.
  *
- * Owns features I1, I2, I3, I4, I8, I9, I11 and I12 (see `inventory.mjs`):
+ * Owns features I1, I2, I3, I4, I8, I9, I11, I12 and I13 (see `inventory.mjs`):
  *   I1  two board surfaces plus floating ink, no third plane
  *   I2  one hover lift everywhere; a card's hover changes only its background
  *   I3  1px rules only: zero border radius, no depth shadow
@@ -10,6 +10,7 @@
  *   I9  viewport fit: no page scroll, columns reach the bottom, no 375px blowout
  *   I11 hotkeys are ignored while a text field or a dialog holds focus
  *   I12 reduced motion collapses animation and transition durations
+ *   I13 a modal is centred in the viewport and the drawer stays a right-hand sidebar
  *
  * The colour half — the blue ban, measured contrast, the tint-versus-cane
  * interaction and imported text staying text — lives in `i-colour.mjs`. They are
@@ -95,9 +96,14 @@ export default {
         await ctx.page.click(sel.resetCancel);
         await page.waitForFunction(() => document.getElementById("reset-dialog").open === false);
 
-        // a toast: the export action reports with one (downloads are accepted by the session)
+        // a toast: the export action reports with one (downloads are accepted by
+        // the session). Export lives in the boards drawer on the React app.
         await ctx.waitFrames();
-        await page.click(sel.btnExport);
+        if (ctx.target !== "vanilla") {
+          await page.click(sel.btnBoards);
+          await page.waitForFunction(() => document.getElementById("boards-dialog")?.open === true);
+        }
+        await page.click(sel.exportAction(ctx.target));
         await ctx.waitFrames();
         await page.waitForTimeout(200);
         const toastSel = sel.toasts_;
@@ -135,16 +141,18 @@ export default {
         const page = ctx.page;
         await ctx.freshBoard();
         await ctx.waitFrames();
-        const rest = parseColor((await styles(page, sel.btnExport, ["background-color"]))["background-color"]);
+        // one button on the page surface (the toolbar) and one on the ink
+        // surface (inside a dialog) — both present in both apps
+        const rest = parseColor((await styles(page, sel.btnOnPage, ["background-color"]))["background-color"]);
 
-        await page.hover(sel.btnExport); // on the page surface (the toolbar)
+        await page.hover(sel.btnOnPage); // on the page surface (the toolbar)
         await page.waitForTimeout(200); // let the 120ms background transition land
-        const onPage = parseColor((await styles(page, sel.btnExport, ["background-color"]))["background-color"]);
+        const onPage = parseColor((await styles(page, sel.btnOnPage, ["background-color"]))["background-color"]);
 
         await ctx.openSettings();
-        await page.hover(sel.settingsExport); // on the ink surface (inside the dialog)
+        await page.hover(sel.btnOnInk); // on the ink surface (inside the dialog)
         await page.waitForTimeout(200);
-        const onInk = parseColor((await styles(page, sel.settingsExport, ["background-color"]))["background-color"]);
+        const onInk = parseColor((await styles(page, sel.btnOnInk, ["background-color"]))["background-color"]);
         await ctx.closeSettings();
 
         const lift = parseColor(await token(page, "--lift"));
@@ -197,7 +205,7 @@ export default {
           card: sel.cards,
           column: sel.columns,
           colHead: sel.columnHead(SEED.columns[0]),
-          button: sel.btnExport,
+          button: sel.btnOnPage,
           dialog: sel.settingsDialog,
           colAdd: "#board [data-add-to]",
         };
@@ -443,6 +451,63 @@ export default {
         };
         const changed = JSON.stringify(compact.live) !== JSON.stringify(normal.live);
         return ok(check(compact) && check(normal) && changed, { compact, normal });
+      },
+    },
+
+    // -- I13 ------------------------------------------------------------------
+    {
+      id: "i-design-11",
+      feature: "I13",
+      name: "a modal is centred in the viewport, and the drawer is still a right-hand sidebar",
+      run: async (ctx) => {
+        const page = ctx.page;
+        await ctx.freshBoard();
+        // the regression this guards: Tailwind's preflight resets `* { margin: 0 }`, which strips
+        // the browser default `dialog { margin: auto }` and pins every modal to the top-left. The
+        // reference has no reset, so it centres — and a CSS diff of board.css cannot see this,
+        // because the stylesheet is byte-identical to the reference. Measure the box, not the rule.
+        const box = (id) =>
+          page.evaluate((i) => {
+            const d = document.getElementById(i);
+            if (!d || !d.open) return null;
+            const r = d.getBoundingClientRect();
+            return {
+              cx: Math.round(r.left + r.width / 2),
+              cy: Math.round(r.top + r.height / 2),
+              left: Math.round(r.left),
+              top: Math.round(r.top),
+              right: Math.round(r.right),
+              bottom: Math.round(r.bottom),
+              w: Math.round(r.width),
+              h: Math.round(r.height),
+            };
+          }, id);
+        const vp = await page.evaluate(() => ({ vw: window.innerWidth, vh: window.innerHeight }));
+
+        await page.click("#btn-reset");
+        await page.waitForFunction(() => document.getElementById("reset-dialog")?.open === true);
+        await ctx.waitFrames();
+        const modal = await box("reset-dialog");
+        await page.keyboard.press("Escape");
+        await page.waitForFunction(() => document.getElementById("reset-dialog")?.open === false);
+        await ctx.waitFrames();
+
+        await ctx.openSettings();
+        await ctx.waitFrames();
+        const drawer = await box("settings-dialog");
+        await ctx.closeSettings();
+
+        // a modal is centred within a few px; a drawer hugs the right edge and the full height
+        const centred =
+          !!modal &&
+          Math.abs(modal.cx - vp.vw / 2) <= 4 &&
+          Math.abs(modal.cy - vp.vh / 2) <= 4;
+        const sidebar =
+          !!drawer &&
+          drawer.right >= vp.vw - 2 &&
+          drawer.h >= vp.vh - 2 &&
+          drawer.left > vp.vw / 2;
+        return ok(centred && sidebar, { modal, drawer, vp, centred, sidebar });
       },
     },
 

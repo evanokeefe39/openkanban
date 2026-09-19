@@ -19,6 +19,10 @@ export const CAPABILITIES = {
     "file-protocol": true,
     // no build output to inspect
     "static-export": false,
+    // the vanilla app keeps the single-board key and is FROZEN: the collection
+    // is a React-app feature, so K1-K9 defer here rather than fail. Deferred is
+    // printed, never counted as covered.
+    "board-collection": false,
   },
   react: {
     // dnd-kit uses pointer events, which Playwright can synthesise — the concrete win
@@ -29,6 +33,7 @@ export const CAPABILITIES = {
     // filesystem root under file://. Accepted loss, asserted rather than forgotten.
     "file-protocol": false,
     "static-export": true,
+    "board-collection": true,
   },
 };
 
@@ -38,6 +43,8 @@ export const CAPABILITY_NOTES = {
   "html5-drag": "the HTML5 drag the vanilla app uses cannot be driven from a synthetic mouse",
   "file-protocol": "the app opens directly from the filesystem, with no server",
   "static-export": "the build emits a static bundle to out/, with no server features",
+  "board-collection":
+    "one board per browser; the vanilla reference is frozen on the single-board key",
 };
 
 /** True when `target` has `capability`. Unknown targets have nothing. */

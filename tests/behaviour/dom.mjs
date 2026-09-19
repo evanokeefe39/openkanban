@@ -102,8 +102,27 @@ export const sel = {
   filterQuery: "#filter-query",
   prioLegend: "#prio-legend",
   depsIndicator: "#deps-indicator",
+  /**
+   * Import and export live in the toolbar on the frozen vanilla reference and
+   * in the boards drawer on the React app. A check that only cares about "the
+   * export action" resolves through the target; a check that cares which
+   * *surface* it sits on names the surface — see `exportOnPage`/`exportOnInk`.
+   */
+  exportAction: (target) => (target === "vanilla" ? "#btn-export" : "#boards-export"),
+  importAction: (target) => (target === "vanilla" ? "#btn-import" : "#boards-import"),
+  /** A `.btn` on the page surface, present in both apps. */
+  btnOnPage: "#btn-settings",
+  /** A `.btn` on the ink surface, present in both apps. */
+  btnOnInk: "#settings-close",
   btnExport: "#btn-export",
   btnImport: "#btn-import",
+  btnBoards: "#btn-boards",
+  boardsDialog: "#boards-dialog",
+  boardsClose: "#boards-close",
+  boardsList: "#boards-list",
+  boardsNew: "#boards-new",
+  boardsExport: "#boards-export",
+  boardsImport: "#boards-import",
   btnSettings: "#btn-settings",
   btnReset: "#btn-reset",
   emptyPrompt: "#empty-prompt",
@@ -161,11 +180,8 @@ export const sel = {
   settingsDensityOption: (value) => `#settings-density button${attr("data-density", value)}`,
   settingsView: "#settings-view input",
   settingsViewToggle: (key) => `#settings-view input${attr("data-view", key)}`,
+  /** The vanilla reference's storage read-out, inside its settings dialog. */
   settingsStorage: "#settings-storage",
-  settingsExport: "#settings-export",
-  settingsImport: "#settings-import",
-  settingsReset: "#settings-reset",
-  settingsSample: "#settings-sample",
 
   // ---- modals, toasts, import ------------------------------------------------
   confirmDialog: "#confirm-dialog",
@@ -259,7 +275,15 @@ export const SEED = {
   /** derived: the subset of `blocked` that ships inside a gate-flagged column */
   overrides: ["c-drawer", "c-chain", "c-filter", "c-drag"],
   counters: "11 CARDS  ·  7 BLOCKED  ·  4 OVERRIDE",
-  name: "MAIN BOARD",
+  /**
+   * The shipped sample's name, per target.
+   *
+   * The React app names it SAMPLE — it is the default board in the collection,
+   * listed beside the user's own. The frozen vanilla reference still ships
+   * `MAIN BOARD` and is not being changed, so a check that compares the open
+   * board's name to "the sample's name" must ask the target.
+   */
+  sampleName: (target) => (target === "vanilla" ? "MAIN BOARD" : "SAMPLE"),
 };
 
 /** Cards the other documents in this repo name, so checks can say what they mean. */

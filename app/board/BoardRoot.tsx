@@ -3,8 +3,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useBoardStore } from "@/stores/board.store";
 import { useViewStore } from "@/stores/view.store";
-import { BOARD_STORAGE_KEY } from "@/lib/types";
-import { serializeBoard } from "@/lib/storage";
+import { BOARD_INDEX_KEY, BOARD_KEY_PREFIX, CORRUPT_SUFFIX } from "@/lib/types";
+import { boardKey, serializeBoard } from "@/lib/storage";
 import { blockedChain, closure } from "@/lib/graph";
 import { pushToast } from "@/stores/toast.store";
 import { requestImport } from "./transfer";
@@ -15,6 +15,7 @@ import { SelectionBar } from "./SelectionBar";
 import { Board } from "./Board";
 import { CardDrawer } from "./CardDrawer";
 import { SettingsDrawer } from "./SettingsDrawer";
+import { BoardsDrawer } from "./BoardsDrawer";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ResetDialog } from "./ResetDialog";
 import { ToastHost } from "./ToastHost";
@@ -115,12 +116,28 @@ export function BoardRoot() {
       releaseCtrl();
       releaseDeps();
     };
-    // cross-tab guard: never silently lose a board written elsewhere
+    // cross-tab guard: never silently lose a board written elsewhere.
+    // Per-board keys make the scope precise — only the board this tab actually
+    // has open can make it stale, and a change to any other board (or to the
+    // index) is another board's business, not a warning.
+    const staleWarning = "THIS BOARD CHANGED IN ANOTHER TAB — RELOAD TO SYNC (LAST WRITE WINS)";
     const onStorage = (event: StorageEvent) => {
-      if (event.key !== BOARD_STORAGE_KEY) return;
-      const current = useBoardStore.getState().board;
+      if (event.key === null) {
+        // storage.clear(): the open board went with it, and so did the list
+        useBoardStore.getState().refreshBoards();
+        pushToast("warn", staleWarning, 12000);
+        return;
+      }
+      if (event.key === BOARD_INDEX_KEY) {
+        // another tab added, removed or switched a board — the list is stale
+        useBoardStore.getState().refreshBoards();
+        return;
+      }
+      if (!event.key.startsWith(BOARD_KEY_PREFIX) || event.key.endsWith(CORRUPT_SUFFIX)) return;
+      const { activeId, board: current } = useBoardStore.getState();
+      if (!activeId || event.key !== boardKey(activeId)) return;
       if (event.newValue && current && event.newValue === serializeBoard(current)) return;
-      pushToast("warn", "THIS BOARD CHANGED IN ANOTHER TAB — RELOAD TO SYNC (LAST WRITE WINS)", 12000);
+      pushToast("warn", staleWarning, 12000);
     };
 
     document.addEventListener("keydown", onKeyDown);
@@ -262,10 +279,7 @@ export function BoardRoot() {
 
   return (
     <div className="app">
-      <TopBar
-        onOpenReset={() => setResetOpen(true)}
-        onOpenImport={() => fileInputRef.current?.click()}
-      />
+      <TopBar onOpenReset={() => setResetOpen(true)} />
       <StatusRow />
       <FilterPanel />
       <SelectionBar />
@@ -273,10 +287,8 @@ export function BoardRoot() {
         {board ? <Board board={board} /> : null}
       </DragLayer>
       <CardDrawer />
-      <SettingsDrawer
-        onOpenReset={() => setResetOpen(true)}
-        onOpenImport={() => fileInputRef.current?.click()}
-      />
+      <SettingsDrawer />
+      <BoardsDrawer onOpenImport={() => fileInputRef.current?.click()} />
       <ConfirmDialog />
       <ResetDialog open={resetOpen} onOpenChange={setResetOpen} />
       <ToastHost />

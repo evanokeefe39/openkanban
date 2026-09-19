@@ -2,15 +2,11 @@
 
 import { useEffect, useRef } from "react";
 import { useBoardStore } from "@/stores/board.store";
-import type { BoardOrigin } from "@/stores/board.store";
 import { useViewStore } from "@/stores/view.store";
-import { BOARD_STORAGE_KEY, CORRUPT_STORAGE_KEY, VIEW_STORAGE_KEY } from "@/lib/types";
 import type { Column, ViewOptions } from "@/lib/types";
 import { titleCaseLabel } from "@/lib/format";
 import { uid } from "@/lib/board";
-import { loadSampleBoard } from "./StatusRow";
 import { pushToast } from "@/stores/toast.store";
-import { exportBoard, requestImport } from "./transfer";
 
 /** App-level view-toggle metadata, as in the reference `app.js`. */
 const VIEW_TOGGLES: Array<{ key: keyof ViewOptions; label: string; title: string }> = [
@@ -22,22 +18,13 @@ const VIEW_TOGGLES: Array<{ key: keyof ViewOptions; label: string; title: string
   { key: "highlightPriority", label: "CARD BACKGROUND BY PRIORITY", title: "Fill each card by its priority instead of drawing only the 2px rail" },
 ];
 
-const ORIGIN_LABEL: Record<Exclude<BoardOrigin, null>, string> = {
-  sample: "SAMPLE BOARD (seeded, not yet edited)",
-  storage: "RESTORED FROM STORAGE",
-  import: "IMPORTED FROM A FILE",
-};
-
 /**
  * The settings drawer. Column rows are uncontrolled (`defaultValue`) inputs
  * committing on change; pending text edits are flushed when the drawer closes,
  * because Escape removes the focused input before its change event can fire.
  */
-export function SettingsDrawer({ onOpenReset, onOpenImport }: { onOpenReset: () => void; onOpenImport: () => void }) {
+export function SettingsDrawer() {
   const board = useBoardStore((state) => state.board);
-  const origin = useBoardStore((state) => state.origin);
-  const lamp = useBoardStore((state) => state.lamp);
-  const lastWrite = useBoardStore((state) => state.lastWrite);
   const settingsOpen = useViewStore((state) => state.settingsOpen);
   const view = useViewStore((state) => state.view);
   const setView = useViewStore((state) => state.setView);
@@ -310,47 +297,6 @@ export function SettingsDrawer({ onOpenReset, onOpenImport }: { onOpenReset: () 
             stored per browser, not with the board.
           </p>
         </div>
-
-        <div className="field field-divider">
-          <span className="field-label">STORAGE</span>
-          <StorageInfo board={board} origin={origin} lampState={lamp.state} lastWrite={lastWrite} />
-          <div className="row" data-field-actions>
-            <button className="btn" id="settings-export" type="button" onClick={() => exportBoard()}>
-              EXPORT JSON
-            </button>
-            <button className="btn" id="settings-import" type="button" onClick={onOpenImport}>
-              IMPORT JSON
-            </button>
-            <button className="btn" id="settings-reset" type="button" disabled={Object.keys(board.cards).length === 0} onClick={onOpenReset}>
-              RESET BOARD
-            </button>
-          </div>
-        </div>
-
-        <div className="field field-divider">
-          <span className="field-label">SAMPLE</span>
-          <div className="row" data-field-actions>
-            <button
-              className="btn"
-              id="settings-sample"
-              type="button"
-              title="Replace this board with the eleven sample cards"
-              onClick={() => {
-                // the reference closes the settings drawer before the sample
-                // path runs (app.js:2127) — the confirm dialog must not open
-                // underneath an open drawer
-                setSettingsOpen(false);
-                loadSampleBoard();
-              }}
-            >
-              LOAD SAMPLE BOARD
-            </button>
-          </div>
-          <p className="hint">
-            Replaces every card on this board with the eleven-card sample. Your columns, board name
-            and view options are kept.
-          </p>
-        </div>
       </div>
     </dialog>
   );
@@ -442,37 +388,3 @@ function ColumnRow({
   );
 }
 
-function StorageInfo({
-  board,
-  origin,
-  lampState,
-  lastWrite,
-}: {
-  board: { cards: Record<string, unknown> };
-  origin: BoardOrigin;
-  lampState: string;
-  lastWrite: string | null;
-}) {
-  let bytes: number | null = null;
-  try {
-    const raw = window.localStorage.getItem(BOARD_STORAGE_KEY);
-    bytes = raw === null ? 0 : new Blob([raw]).size;
-  } catch {
-    bytes = null;
-  }
-  const lines = [
-    `BOARD  ${origin ? ORIGIN_LABEL[origin] : "EDITED IN THIS BROWSER"}`,
-    `CARDS  ${Object.keys(board.cards).length}`,
-    `KEY  ${BOARD_STORAGE_KEY}`,
-    `VIEW  ${VIEW_STORAGE_KEY}`,
-    bytes === null ? "SIZE  UNAVAILABLE" : `SIZE  ${bytes.toLocaleString()} BYTES`,
-    `LAST WRITE  ${lastWrite || "—"}`,
-    `STATUS  ${lampState.toUpperCase()}`,
-    `RECOVERY COPY  ${CORRUPT_STORAGE_KEY}`,
-  ];
-  return (
-    <p className="hint" id="settings-storage">
-      {lines.join("\n")}
-    </p>
-  );
-}

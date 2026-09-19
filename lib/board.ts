@@ -197,6 +197,23 @@ export function validateBoard(raw: unknown): ValidateResult {
 // Seed board — byte for byte the sample the vanilla app ships
 // ---------------------------------------------------------------------------
 
+/**
+ * An empty board: the five standard columns, no cards, numbering from 1.
+ *
+ * Built from `DEFAULT_COLUMNS` rather than by emptying the sample, so there are
+ * no dangling ids: the reset path leaves `cardIds` behind when it clears
+ * `cards`, and a new board must not inherit that.
+ */
+export function blankBoard(name: string = 'UNTITLED BOARD'): Board {
+  return {
+    version: SCHEMA_VERSION,
+    name,
+    columns: DEFAULT_COLUMNS.map((column) => ({ ...column, cardIds: [] })),
+    cards: {},
+    nextNumber: 1,
+  };
+}
+
 export function seedBoard(): Board {
   const now = new Date().toISOString();
   const make = (id: string, title: string, extra: Partial<Card>): Card => ({
@@ -286,7 +303,7 @@ export function seedBoard(): Board {
 
   return {
     version: SCHEMA_VERSION,
-    name: 'MAIN BOARD',
+    name: 'SAMPLE',
     columns: [
       { ...DEFAULT_COLUMNS[0], cardIds: ['c-shell', 'c-store'] },
       { ...DEFAULT_COLUMNS[1], cardIds: ['c-graph', 'c-cycle', 'c-gate'] },

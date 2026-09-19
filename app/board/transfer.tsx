@@ -87,11 +87,8 @@ export function requestImport(file: File): void {
 function applyImport(board: Board, repairs: number): void {
   useBoardStore.getState().setBoard(board, "import");
   const view = useViewStore.getState();
-  view.setFilterQuery("");
-  view.clearFilters();
-  view.setFilterOpen(false);
-  view.closeCard();
   view.setSettingsOpen(false);
+  view.resetForDocumentChange();
   pushToast(
     "ok",
     `IMPORTED ${Object.keys(board.cards).length} CARD(S)${repairs ? ` — ${repairs} REPAIR(S) APPLIED` : ""}`
