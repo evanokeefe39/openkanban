@@ -1,0 +1,36 @@
+@import "tailwindcss";
+@import "./fonts.css";
+
+/*
+ * The design language, split by surface. The order below is the cascade order
+ * the single sheet had, and it matters: tokens must resolve before anything
+ * reads them, and `controls` sets the shared control shapes that the board,
+ * cards and dialogs then specialise.
+ *
+ *   01-tokens        the `:root` custom properties — every `var()` resolves here
+ *   02-view-options  density scale and card-face visibility (presentation only)
+ *   03-layout        the app shell and its viewport fit
+ *   04-controls      `.btn`, `.input`, `.seg`, `.chip` — the shared control shapes
+ *   05-board         the board, columns and filter pane
+ *   06-card          the card, its rail, chips and dependency marks
+ *   07-dialogs       every overlay
+ *   08-toasts        the toast stack
+ *
+ * The class names and values are the reference app's verbatim, which is what
+ * makes the screenshot comparison against it meaningful rather than approximate.
+ * `fonts.css` self-hosts JetBrains Mono, so the app makes no network request at
+ * all.
+ *
+ * `tests/check-styles.mjs` fails the build if any `var(--x)` has no definition;
+ * splitting the sheet means a token and its consumer now live in different
+ * files, so that check is what keeps the split honest rather than the file
+ * boundary.
+ */
+@import "../styles/01-tokens.css";
+@import "../styles/02-view-options.css";
+@import "../styles/03-layout.css";
+@import "../styles/04-controls.css";
+@import "../styles/05-board.css";
+@import "../styles/06-card.css";
+@import "../styles/07-dialogs.css";
+@import "../styles/08-toasts.css";

@@ -1,0 +1,54 @@
+/* ============================================================
+   Toasts
+   ============================================================ */
+.toasts {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 20;
+  max-width: min(440px, calc(100vw - 24px));
+}
+.toast {
+  border: 1px solid var(--line-strong);
+  border-left-width: 3px;
+  background: var(--ink-bg);
+  color: var(--color-foreground-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 7px 9px;
+  cursor: pointer;
+  animation: toast-in 160ms var(--ease-out);
+}
+.toast[data-kind='info'] {
+  border-left-color: var(--color-border-focus);
+}
+.toast[data-kind='ok'] {
+  border-left-color: var(--color-vu-green);
+}
+.toast[data-kind='warn'] {
+  border-left-color: var(--color-accent);
+}
+.toast[data-kind='error'] {
+  border-left-color: var(--color-destructive);
+  color: var(--color-foreground);
+}
+@keyframes toast-in {
+  from {
+    transform: translateY(6px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

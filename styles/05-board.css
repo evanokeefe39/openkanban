@@ -1,0 +1,139 @@
+/* ============================================================
+   Board
+   ============================================================ */
+.board {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  padding: 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  min-height: 0;
+  /* a board narrower than the viewport sits in the middle rather than against the left edge, for any
+     number of columns. Once they cannot fit, the auto margins resolve to zero and the row scrolls
+     from the first column as usual. `safe` guards the centre: plain `center` clips the overflow on
+     the left where scrollLeft cannot go negative, leaving the first columns unreachable at narrow
+     widths (ISSUES.md, third defect carried on the vanilla target). */
+  justify-content: safe center;
+  margin-inline: auto;
+  width: max-content;
+  max-width: 100%;
+}
+.board > .plate {
+  flex: 0 0 auto;
+  margin-inline: auto;
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 var(--col-width);
+  width: var(--col-width);
+  max-height: 100%;
+  background: var(--color-background);
+  border: 1px solid var(--line);
+}
+/* the column shares the page's fill, so the 1px rule is what draws it and the header band is marked
+   by its own stronger bottom hairline rather than by a change of surface */
+.col-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: var(--density-head-pad);
+  background: var(--color-background);
+  border-bottom: 1px solid var(--line-strong);
+}
+.col-name {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.col-count {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--color-foreground);
+  font-variant-numeric: tabular-nums;
+}
+.col-hidden {
+  font-size: 10px;
+  color: var(--color-foreground-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.col-add {
+  position: relative;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--color-foreground-secondary);
+  background: transparent;
+  border: 1px solid var(--line);
+  cursor: pointer;
+  transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out),
+    border-color 120ms var(--ease-out), transform 100ms var(--ease-out);
+}
+/* visible control is 22px; the interactive area is 38px per WCAG hit-area guidance */
+.col-add::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+}
+/* a white lift rather than a fixed surface colour, so the hover reads as raised on any header hue */
+.col-add:hover {
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--ivory);
+  border-color: var(--line-strong);
+}
+.col-add:active {
+  transform: scale(0.97);
+}
+
+.col-body {
+  flex: 1 1 auto;
+  min-height: 48px;
+  overflow-y: auto;
+  padding: var(--density-body-pad);
+  display: flex;
+  flex-direction: column;
+  gap: var(--density-card-gap);
+  transition: background-color 120ms var(--ease-out);
+}
+.col-body.drag-over {
+  /* the drop target reads as ink — the same fill the floating chrome uses — rather than the indigo
+     wash that predated the navy sweep and was the last blue left in the sheet */
+  background: var(--ink-bg);
+}
+
+.plate {
+  border: 1px dashed var(--line);
+  color: var(--color-foreground-muted);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 14px 10px;
+  text-align: center;
+}
+.plate-action {
+  width: 100%;
+  font-family: inherit;
+  letter-spacing: 0.12em;
+  color: var(--color-foreground-secondary);
+  background: transparent;
+  cursor: pointer;
+  transition: border-color 120ms var(--ease-out), color 120ms var(--ease-out);
+}
+.plate-action:hover {
+  border-color: var(--line-strong);
+  color: var(--ivory);
+}

@@ -1,0 +1,344 @@
+/* ============================================================
+   Controls
+   ============================================================ */
+.btn {
+  font-family: inherit;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-foreground-secondary);
+  background: transparent;
+  border: 1px solid var(--line);
+  padding: 5px 8px;
+  cursor: pointer;
+  transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out),
+    border-color 120ms var(--ease-out), transform 100ms var(--ease-out);
+}
+.btn:hover {
+  background: var(--lift);
+  color: var(--color-foreground);
+  border-color: var(--line-strong);
+}
+.btn:active {
+  transform: scale(0.97);
+}
+.btn[aria-pressed='true'] {
+  background: var(--ivory);
+  border-color: var(--ivory);
+  color: #000;
+}
+/* lucide icons (vendored inline SVG): sized to the caption type, inheriting the button's colour */
+.icon {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  margin-right: 6px;
+  vertical-align: -2px;
+}
+.btn.primary {
+  background: var(--ivory);
+  border-color: var(--ivory);
+  color: #000;
+  font-weight: 700;
+}
+.btn.danger {
+  color: var(--color-destructive);
+  border-color: rgba(239, 68, 68, 0.4);
+}
+.btn.danger:hover {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ff8b8b;
+  border-color: rgba(239, 68, 68, 0.7);
+}
+/* The armed state of a destructive action: filled, because this is the one button on the board that
+   deletes work, and it only reaches this state after the word has been typed. */
+.btn.danger-solid {
+  background: var(--color-destructive);
+  border-color: var(--color-destructive);
+  color: #180406;
+  font-weight: 700;
+}
+.btn.danger-solid:hover:not(:disabled) {
+  background: #ff8b8b;
+  border-color: #ff8b8b;
+  color: #180406;
+}
+.btn.danger-solid:disabled,
+.btn.danger-solid:disabled:hover {
+  background: transparent;
+  border-color: rgba(239, 68, 68, 0.28);
+  color: rgba(239, 68, 68, 0.5);
+  opacity: 1;
+}
+.btn.mini {
+  padding: 2px 6px;
+  font-size: 11px;
+  letter-spacing: 0;
+}
+.btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.btn:disabled:hover {
+  background: transparent;
+  color: var(--color-foreground-secondary);
+  border-color: var(--line);
+}
+
+.search {
+  position: relative;
+  /* the field never collapses: the spacers either side will starve a shrinkable item once the bar
+     is crowded, and a zero-width search box is worse than a bar that scrolls */
+  flex: 0 0 auto;
+}
+.search input {
+  /* scales with the viewport so the field, not the board title, gives way in a crowded bar */
+  width: clamp(130px, 17vw, 220px);
+}
+
+/* filter disclosure — the categories live behind the chevron. The trigger is a ghost like its
+   neighbours in the bar; only the pane it opens wears the ink surface. */
+.filter-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  background: transparent;
+  color: var(--color-foreground-secondary);
+  border-color: var(--line);
+}
+.filter-toggle:hover {
+  background: var(--lift);
+  color: var(--color-foreground);
+  border-color: var(--line-strong);
+}
+.filter-toggle .chev {
+  width: 8px;
+  height: 5px;
+  transition: transform 140ms var(--ease-out);
+}
+.filter-toggle[aria-expanded='true'] {
+  background: var(--lift);
+  color: var(--color-foreground);
+  border-color: var(--line-strong);
+}
+.filter-toggle[aria-expanded='true'] .chev {
+  transform: rotate(180deg);
+}
+.filter-count {
+  font-variant-numeric: tabular-nums;
+  background: var(--ivory);
+  color: #000;
+  padding: 0 4px;
+}
+.filter-count[hidden] {
+  display: none;
+}
+
+/* The pane floats over the board rather than pushing it down. It is the page's own fill, so what
+   separates it from the board is the 1px rule and the dimmed content behind it rather than a second
+   surface colour — there is no ink plane left anywhere in the app. */
+.filter-panel {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: max-content;
+  max-width: min(680px, calc(100vw - 24px));
+  padding: 10px 12px 12px;
+  border: 1px solid var(--line-strong);
+  background: var(--color-background);
+}
+.filter-panel[hidden] {
+  display: none;
+}
+.filter-group {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.filter-group-name {
+  flex: 0 0 74px;
+  padding-top: 3px;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  /* secondary, not muted: these are 9px labels and the muted token measured ~3.8:1 on the ink pane
+     (and ~3.2:1 on the elevated surface before it), both under AA for small text */
+  color: var(--color-foreground-secondary);
+}
+.filter-group .chips {
+  flex: 1 1 auto;
+}
+.filter-panel-foot {
+  display: flex;
+  justify-content: flex-end;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+
+/* priority legend — documents the rail on the top edge of each card. It sits in the read-out row
+   with no divider of its own: the row is not a toolbar and nothing in it should read as a control. */
+.prio-legend {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--color-foreground-secondary);
+}
+.prio-legend[hidden] {
+  display: none;
+}
+.prio-legend-label {
+  color: var(--color-foreground-secondary);
+}
+.prio-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+/* one definition of the priority palette, shared by the card rail, the legend and the filters */
+.prio-swatch {
+  display: block;
+  width: 12px;
+  height: 3px;
+  background: transparent;
+}
+[data-prio='1'] .prio-swatch {
+  background: var(--color-priority-p0);
+}
+[data-prio='2'] .prio-swatch {
+  background: var(--color-priority-p1);
+}
+[data-prio='3'] .prio-swatch {
+  background: var(--color-priority-p2);
+}
+/* NONE draws no rail on a card, so its key is hollow rather than a grey bar */
+[data-prio='0'] .prio-swatch {
+  border: 1px dashed var(--color-foreground-muted);
+}
+
+.input {
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--color-foreground);
+  background: var(--inset-bg);
+  border: 1px solid var(--line);
+  padding: 6px 7px;
+  width: 100%;
+  transition: border-color 120ms var(--ease-out), box-shadow 120ms var(--ease-out);
+}
+.input::placeholder {
+  color: var(--color-foreground-secondary);
+  letter-spacing: 0.08em;
+  font-size: 10px;
+}
+.input:focus {
+  outline: none;
+  border-color: var(--color-border-focus);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--color-border-focus) 40%, transparent);
+}
+textarea.input {
+  resize: vertical;
+  line-height: 1.5;
+  min-height: 60px;
+}
+input[type='date'].input {
+  color-scheme: dark;
+}
+
+/* segmented control */
+.seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+}
+.seg > * + * {
+  margin-left: -1px;
+}
+.seg button {
+  font-family: inherit;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-foreground-secondary);
+  background: transparent;
+  border: 1px solid var(--line);
+  padding: 5px 9px;
+  cursor: pointer;
+  transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out);
+}
+.seg button:hover:not(:disabled):not([aria-pressed='true']) {
+  background: var(--lift);
+  color: var(--color-foreground);
+}
+.seg button[aria-pressed='true'] {
+  background: var(--ivory);
+  border-color: var(--ivory);
+  color: #000;
+  font-weight: 700;
+}
+.seg button:disabled {
+  color: var(--color-foreground-muted);
+  border-style: dashed;
+  cursor: default;
+}
+
+/* chips */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 5px;
+  border: 1px solid var(--line);
+  color: var(--color-foreground-secondary);
+  background: var(--inset-bg);
+  white-space: nowrap;
+}
+button.chip {
+  cursor: pointer;
+  transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out);
+}
+button.chip:hover {
+  background: var(--lift);
+  color: var(--color-foreground);
+}
+/* selected filter chip — the ivory ON treatment used by the segmented controls */
+button.chip[aria-pressed='true'],
+button.chip[aria-pressed='true']:hover {
+  background: var(--ivory);
+  border-color: var(--ivory);
+  color: #000;
+}
+.chip.blocked {
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.5);
+}
+.chip.override {
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.5);
+}
+.chip.due-overdue {
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.5);
+}
+.chip.due-today {
+  color: var(--color-due-today);
+  border-color: rgba(20, 184, 166, 0.5);
+}
+.chip.prio {
+  color: var(--color-foreground);
+  border-color: var(--line-strong);
+}

@@ -1,0 +1,188 @@
+/* ============================================================
+   Layout — viewport fit, no page scrollbar
+   ============================================================ */
+.app {
+  display: grid;
+  /* the selection bar overlays the board rather than taking a grid row, so it needs this box as its
+     containing block */
+  position: relative;
+  /* minmax(0,1fr) stops a nowrap row from forcing the document wider than the viewport */
+  grid-template-columns: minmax(0, 1fr);
+  /* topbar, status row, then the board takes every remaining pixel — which is what makes every
+     column reach the bottom of the page rather than stopping at its last card */
+  grid-template-rows: auto auto minmax(0, 1fr);
+  height: 100dvh;
+}
+
+/* The read-out row under the bar: no border, no fill, no separator of its own — it carries the
+   overlay's hotkey and the priority key, and must not read as a second toolbar. */
+.status-row {
+  display: grid;
+  /* message | gutter | keys | gutter | legend — equal gutters keep the key cluster centred on the
+     page no matter how wide the message or the legend gets */
+  grid-template-columns: 1fr minmax(0, auto) auto minmax(0, auto) 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.row-message {
+  grid-column: 1;
+  justify-self: start;
+  display: none;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+html[data-board-empty="1"] .row-message {
+  display: flex;
+}
+.row-keys {
+  grid-column: 3;
+  justify-self: center;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.row-gutter {
+  min-width: 0;
+}
+.prio-legend {
+  grid-column: 5;
+  justify-self: end;
+}
+.row-message-text {
+  color: var(--color-foreground-muted);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line-strong);
+  background: var(--color-background);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.brand {
+  border: 1px solid var(--line-strong);
+  padding: 3px 7px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: var(--ivory);
+}
+
+.board-name {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* the title does not shrink: with the toolbar's controls on one row, a squeezed title truncated
+     to "MA…" was the first thing the eye landed on. The bar scrolls instead, and the search field
+     scales with the viewport so it gives way first. */
+  flex: 0 0 auto;
+  max-width: 34ch;
+}
+
+/* The title is editable in place. The affordances are `cursor: text` and a `--lift` hover —
+   `background: var(--lift)` is the treatment `.btn`, `.filter-toggle`, `button.chip` and the picker
+   buttons use (8 rules in this sheet; `.col-add:hover` at 0.09 is the one deliberate exception, a
+   stronger lift on the smallest target).
+   The padding exists because `.board-name` is otherwise a bare inline box: a `--lift` fill on an
+   unpadded h1 paints a rectangle flush to the glyphs, which reads as a mis-sized button — the
+   opposite of the intent. Measured: the glyph run sits 4px in from the box edge and 1px down, and
+   the box is the title's own line box, so no `margin: 0 -4px` is added — that would overhang the
+   fill 4px leftwards while the right side stays inset, and it does not move the ink at all.
+   No border and no underline: this is the board's own name, not a button, and it must not read as
+   one of the toolbar's controls.
+   The text colour is deliberately untouched on hover. `--ivory` appears in this sheet as 8 fills
+   (`.brand`, `.btn[aria-pressed]`, `.filter-count`, the segment buttons), as text (`.col-add:hover`,
+   `.plate-action:hover`, `.selection-count`) and as the selection ring and tick `accent-color`, so
+   it is not a distinguishable signal to add here. */
+h1.board-name {
+  cursor: text;
+  padding: 1px 4px;
+}
+h1.board-name:hover {
+  background: var(--lift);
+}
+h1.board-name:focus-visible {
+  outline: 1px solid var(--color-border-focus);
+  outline-offset: 2px;
+}
+
+/* The edit state re-pins everything `.input` would otherwise impose, so the field reads as the
+   title rather than as a form control: same 15px type (no vertical jump), same non-shrinking
+   width basis, same 34ch cap.
+   Qualified with `input` deliberately: the element carries both `.input` and this class, the two
+   selectors have equal specificity, and `.input` is defined further down the sheet — so an
+   unqualified rule here loses the cascade and the field renders at `.input`'s 12px with its
+   6px padding.
+   Measured, so the next reader does not have to guess: the bar height is unchanged (44px) and the
+   right-hand cluster (lamp, BOARDS, SETTINGS, RESET) and `#board` do not move at all. The field is
+   ~4px taller than the h1 (a 1px border plus 1px padding, which is what makes it look like a
+   field) and is wider than the short title it replaces, so the counters and search shift right
+   while it is open. A field sized to a 49px title would be unusable; the toolbar scrolls
+   horizontally by design for exactly this kind of pressure. */
+input.board-name-edit {
+  width: auto;
+  min-width: 0;
+  flex: 0 0 auto;
+  max-width: 34ch;
+  padding: 1px 4px;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.counters {
+  margin: 0 0 0 8px;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-foreground-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.spacer {
+  flex: 1;
+}
+
+/* storage lamp — reflects write truth, never decoration */
+.lamp {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  /* secondary, not muted: on the carbon band the muted grey measured 3.58:1 at 10px, and this is the
+     one readout that tells you whether your work was written to storage */
+  color: var(--color-foreground-secondary);
+  white-space: nowrap;
+}
+.lamp-dot {
+  width: 7px;
+  height: 7px;
+  background: var(--color-foreground-muted);
+  display: block;
+}
+.lamp[data-state='saved'] .lamp-dot {
+  background: var(--color-vu-green);
+}
+.lamp[data-state='error'] .lamp-dot {
+  background: var(--color-destructive);
+}
+.lamp[data-state='error'] {
+  color: var(--color-destructive);
+}
