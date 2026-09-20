@@ -16,8 +16,10 @@ one rule that shapes it, how to run and verify it, and the conventions a change 
 > agreement while the comparison was the acceptance test; that test has done its job. Defects the
 > vanilla app carries are now fixed in the port rather than inherited — see the drawer blur-commit
 > in `ISSUES.md`. The Architecture and Conventions sections below still describe the **vanilla**
-> implementation; the port's structure is `lib/` (pure model), `stores/` (state), `app/board/`
-> (components).
+> implementation; the port's structure is `lib/` (pure model), `stores/` (state),
+> `components/{board,chrome,overlays}` (UI) and `styles/` (one sheet per surface),
+> with the components' domain helpers (`add-flow`, `cycle`, `board-name`,
+> `move-gate`, `transfer`) living in `lib/` beside the pure model.
 
 ## What this is
 
