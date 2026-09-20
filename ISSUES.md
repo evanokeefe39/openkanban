@@ -143,7 +143,7 @@ COMPACT density all five fit.
 **The toolbar is ~13px off true centre.** The button cluster is wider than the brand cluster; centring
 is of the search field, which is what was asked for.
 
-**The drawer's close-flush checks raced the write — found by measurement, fixed by settling the read.**
+**The drawer's close-flush checks raced the write — the read settled; the mechanism is hypothesised, not isolated.**
 B7 and B14 failed on CI and passed locally. The first explanation — that the checks read storage in the
 window between the dialog reporting closed and the flush writing — was tested in a real browser and
 looked **disproven**: on this machine the write is in storage the instant `open` flips false, because
@@ -151,16 +151,22 @@ looked **disproven**: on this machine the write is in storage the instant `open`
 task. What that measurement actually established was the ordering *on a slow local runner*; it could not
 see the runner it was arguing about.
 
-The CI evidence that settled it: run #35500914581's B7 detail showed `textPersisted: false` at read 3
-while `final.title` — read at the end of the same check — read `"Renamed card"`. The write landed; the
-read was early. On a fast headless runner the blur a close causes queues its commit for the next
-animation frame, and the check's read observed `open === false` before that frame. B7 lost the race on
-all five CI runs and never locally; B14 on four of five.
+The CI evidence that moved the needle: run #35500914581's B7 detail showed `textPersisted: false` at read 3
+while `final.title` — read at the end of the same check — read `"Renamed card"`. So the write landed by
+the check's end and read 3 saw none: the read was early, and B7 lost that race on all five CI runs while
+never losing it locally; B14 on four of five. **What is still unexplained** is the divergence itself: a
+write that is synchronous at `open === false` on this machine should not be missable by a read that
+waits for `open === false`. The CLOSE-button path (mousedown-blur queues a commit for the next frame,
+which the click task may outrun on a fast runner) is the candidate — but it is a hypothesis, and the
+instrumentation above covered only the Escape path.
 
 The fix is in the checks, not the app: both now wait two frames after the drawer closes before reading
 storage, exactly as B15 already does. The assertions are untouched, and a genuinely missing write still
 fails the check — the wait cannot paper over an app defect, only stop a correct one from being read too
-early. Commit `e5e5c1d`; the gate has been green since.
+early. Commit `e5e5c1d`. Green on runs #35501507266 and #35501666474 against a 5/5 red history —
+consistent with the read-early explanation, but two green samples are not proof, and the frame wait is
+itself a guess: if it ever flakes, the more deterministic version is to wait on the stored outcome (the
+stored value itself) rather than a fixed frame count. The assertion is unchanged either way.
 
 The app's persistence logic is independently confirmed by the component layer, which asserts the
 *stored* document (read back out of `localStorage`, not in-memory state) for title, notes, due, priority
