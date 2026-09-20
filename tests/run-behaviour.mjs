@@ -5,10 +5,8 @@
  * Drives the behaviour suite against the app — the Next.js static export in
  * `out/` — and holds it to the inventory:
  *
- *   node tests/run-behaviour.mjs --target react           the gate for the app (default)
- *   node tests/run-behaviour.mjs --target vanilla         the frozen reference (opt-in)
- *   node tests/run-behaviour.mjs --target both --mode report
- *   node tests/run-behaviour.mjs --compare                diff the last two reports
+ *   node tests/run-behaviour.mjs                     the gate for the app (default)
+ *   node tests/run-behaviour.mjs --mode report       measure without failing
  *
  * The cross-app family (J1-J5, formerly `tests/behaviour/crossapp.mjs`) is RETIRED: it
  * graded a port against the app it was ported from, and with one app there is
@@ -30,8 +28,7 @@
  * remaining work is a list rather than a feeling — and says so in its last line
  * so a green-looking report can never be mistaken for a green gate.
  */
-import { readFile } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { relative } from "node:path";
 import { ALL_CHECKS } from "./behaviour/index.mjs";
 import { createCtx } from "./behaviour/context.mjs";
 import {
@@ -60,12 +57,10 @@ const MAX_FAILURE_SHOTS = 12;
 
 function parseArgs(argv) {
   const options = {
-    targets: ["react"],
     only: [],
     mode: "gate",
     timeout: 45_000,
     build: true,
-    compare: false,
     verbose: false,
     help: false,
   };
@@ -74,13 +69,7 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--help" || arg === "-h") options.help = true;
-    else if (arg === "--target") {
-      const requested = value(i++);
-      options.targets = requested === "both" ? [...H.TARGET_IDS] : [requested];
-    } else if (arg.startsWith("--target=")) {
-      const requested = arg.slice(9);
-      options.targets = requested === "both" ? [...H.TARGET_IDS] : [requested];
-    } else if (arg === "--only") options.only = value(i++).split(",").map((s) => s.trim()).filter(Boolean);
+    else if (arg === "--only") options.only = value(i++).split(",").map((s) => s.trim()).filter(Boolean);
     else if (arg === "--mode") options.mode = value(i++);
     else if (arg === "--timeout") options.timeout = Number(value(i++));
     else if (arg === "--no-build") options.build = false;
@@ -90,16 +79,8 @@ function parseArgs(argv) {
           `part of the suite because there is one app, not a port plus its origin. See RETIRED in ` +
           `tests/behaviour/inventory.mjs.`
       );
-    else if (arg === "--all") {
-      options.targets = [...H.TARGET_IDS];
-      options.mode = "report";
-    } else if (arg === "--compare") options.compare = true;
     else if (arg === "--verbose") options.verbose = true;
     else throw new Error(`unknown argument "${arg}" (try --help)`);
-  }
-
-  for (const target of options.targets) {
-    if (!H.TARGETS[target]) throw new Error(`unknown target "${target}" (${H.TARGET_IDS.join(", ")})`);
   }
   if (!["gate", "report"].includes(options.mode)) throw new Error(`--mode must be gate or report`);
   return options;
@@ -107,19 +88,16 @@ function parseArgs(argv) {
 
 const HELP = `openkanban behaviour suite
 
-  --target react|vanilla|both   which app(s) to drive        (default react)
   --only a,b-cards,C4           run only matching suites, check ids or features
   --mode gate|report            gate fails the process; report never does
   --timeout <ms>                per-check ceiling            (default 45000)
-  --no-build                    skip the next build for the react target
-  --all                         both targets, report mode
-  --compare                     diff the last two target reports
+  --no-build                    skip the next build
   --verbose                     print the measurement for passing checks too
 
 Exit code is 0 only for a gate run in which everything ran and passed.
 
 The cross-app flags (--cross, --visual) are retired: J1-J5 graded a port against
-its origin app, and the origin is now a frozen reference. See RETIRED in
+its origin app, and the origin is gone. See RETIRED in
 tests/behaviour/inventory.mjs.
 `;
 
@@ -309,7 +287,6 @@ async function runTarget(browser, targetId, options) {
 function describeCapability(targetId, capability) {
   const notes = {
     "pointer-drag": "this target's drag cannot be driven from a synthetic mouse",
-    "html5-drag": "an HTML5 drop cannot be synthesised",
     "file-protocol": "this target cannot be opened from the filesystem",
     "static-export": "this target has no build output",
     "board-collection": "this target keeps the frozen single-board key",
@@ -436,52 +413,6 @@ function printTarget(summary, options) {
   return counts;
 }
 
-async function compare() {
-  const read = async (id) => JSON.parse(await readFile(join(H.ARTIFACTS, `behaviour-${id}.json`), "utf8"));
-  let vanilla;
-  let react;
-  try {
-    [vanilla, react] = await Promise.all([read("vanilla"), read("react")]);
-  } catch (error) {
-    console.log(`nothing to compare: ${error.message}`);
-    console.log("run both targets first: node tests/run-behaviour.mjs --target both");
-    return 1;
-  }
-
-  const index = (report) => new Map(report.results.map((row) => [row.id, row]));
-  const a = index(vanilla);
-  const b = index(react);
-  const regressions = [];
-  const divergences = [];
-
-  for (const [id, left] of a) {
-    const right = b.get(id);
-    if (!right) {
-      divergences.push(`${id}: present on vanilla, missing from the react suite`);
-      continue;
-    }
-    if (left.status === right.status) continue;
-    const line = `${left.feature.padEnd(4)} ${left.name}\n         vanilla: ${left.status}   react: ${right.status}`;
-    if (left.status === "pass" && right.status === "fail") regressions.push(`${line}\n         ${right.detail}`);
-    else divergences.push(line);
-  }
-
-  console.log("\nport comparison — vanilla vs react");
-  console.log(`${"─".repeat(78)}`);
-  if (regressions.length) {
-    console.log(`\nregressions (green on vanilla, red on react): ${regressions.length}`);
-    for (const line of regressions) console.log(`  ${line}`);
-  } else {
-    console.log("\nno regressions: every check green on vanilla is green on react");
-  }
-  if (divergences.length) {
-    console.log(`\nother divergences: ${divergences.length}`);
-    for (const line of divergences) console.log(`  ${line}`);
-  }
-  console.log(`\nledger  vanilla ${vanilla.ledger.covered}/${vanilla.ledger.total}   react ${react.ledger.covered}/${react.ledger.total}`);
-  return regressions.length ? 1 : 0;
-}
-
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -492,14 +423,11 @@ async function main() {
     console.log(HELP);
     return 0;
   }
-  if (options.compare) return compare();
 
   const browser = await H.launchBrowser();
   const summaries = [];
   try {
-    for (const targetId of options.targets) {
-      summaries.push(await runTarget(browser, targetId, options));
-    }
+    summaries.push(await runTarget(browser, "react", options));
   } finally {
     await browser.close();
   }
@@ -532,7 +460,7 @@ async function main() {
     console.log(
       `REPORT MODE — ${broken} check(s) failing or errored, ${unrunnable} not run. This run is not a gate.`
     );
-    console.log("The gate is `npm run behaviour` against the React app; the vanilla reference is opt-in (`npm run behaviour:reference`).");
+    console.log("The gate is `npm run behaviour` against the React app.");
     return 0;
   }
   if (failed || notRun || uncovered) {
@@ -552,7 +480,7 @@ async function main() {
     );
     return 0;
   }
-  console.log("GATE PASSED — every required behaviour ran on every target and held.");
+  console.log("GATE PASSED — every required behaviour ran and held.");
   return 0;
 }
 

@@ -1,21 +1,17 @@
 /**
- * Token check for the stylesheets — both apps.
+ * Token check for the stylesheets.
  *
  * A build with no CSS validation resolves an undefined custom property silently:
  * `var(--gone)` just makes the declaration invalid, so a deleted token leaves an
  * element with no background and no console error. This catches that statically —
  * every `var(--x)` use must have a `--x:` definition.
  *
- * Two targets are checked, and they are deliberately separate:
+ * The app that ships is checked as one target: `styles/*.css` + everything under
+ * `app/` and `components/`. Its tokens are defined in `styles/01-tokens.css` and
+ * consumed across the other seven sheets and the components' inline styles.
  *
- *   vanilla  `styles.css` + `index.html` + `app.js` — the frozen reference. Its
- *            own stylesheet defines its own tokens.
- *   react    `styles/*.css` + everything under `app/` — the app that ships. Its
- *            tokens are defined in `styles/01-tokens.css` and consumed across the
- *            other seven sheets and the components' inline styles.
- *
- * A token is resolved if it is defined anywhere in the same target's sources.
- * Splitting the reference sheet into `styles/` made this check load-bearing
+ * A token is resolved if it is defined anywhere in the target's sources.
+ * Splitting the styles into `styles/` made this check load-bearing
  * rather than incidental: a token and its consumer now live in different files,
  * so this is what keeps the split honest instead of the file boundary.
  */
@@ -44,14 +40,6 @@ async function walk(dir, extensions) {
 }
 
 const TARGETS = [
-  {
-    name: "vanilla",
-    files: [
-      join(ROOT, "styles.css"),
-      join(ROOT, "index.html"),
-      join(ROOT, "app.js"),
-    ],
-  },
   {
     name: "react",
     files: [

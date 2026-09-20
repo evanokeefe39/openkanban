@@ -21,7 +21,7 @@ const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 /** Directories to walk for scripts. */
 const TREES = ["tests", "tools"];
 /** Scripts that sit at the repo root, where a whole-tree walk would pick up junk. */
-const ROOT_SCRIPTS = ["app.js"];
+const ROOT_SCRIPTS = [];
 /** Never descended into: build output, dependencies, and throwaway probe scripts. */
 const SKIP = new Set([".artifacts", "node_modules", ".next", "out", "dist"]);
 

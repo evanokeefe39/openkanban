@@ -82,10 +82,9 @@ export const REQUIRED = {
 
   // Changed when the header title became editable in place (f-columns-11..13):
   // F1 now covers BOTH name-editing surfaces — the settings drawer and the
-  // header's click-to-edit h1 — sharing one commit path. The frozen vanilla
-  // reference keeps a read-only header, so the new checks declare the
-  // `in-place-rename` capability (see capabilities.mjs) and defer on vanilla;
-  // f-columns-01/02 keep the drawer covered on both targets.
+  // header's click-to-edit h1 — sharing one commit path. These checks declare
+  // the `in-place-rename` capability (see capabilities.mjs); f-columns-01/02
+  // keep the drawer covered as well.
   F1: "the board name is edited in place in the header and in the settings drawer, refusing a blank one",
   F2: "columns can be added, renamed, reordered and deleted",
   F3: "deleting a column holding cards moves them left and reports the count",
@@ -141,53 +140,28 @@ export const REQUIRED = {
 };
 
 /**
- * Checks that assert a behaviour the **reference app does not have**, with the
- * reason and the target(s) the defect is excused on.
+ * Checks that assert a behaviour the **app genuinely does not have**, with the
+ * reason the defect is excused.
  *
  * An entry here does not weaken an assertion: the check still asserts the
- * documented invariant and still fails on any target that does not meet it. What
- * it changes is the gate. Without this list the choice would be between a
- * permanently red vanilla gate and loosening the assertion until it passes —
- * and loosening it is how a suite stops being able to fail.
+ * documented invariant. What it changes is the gate. Without this list the
+ * choice would be between a permanently red gate and loosening the assertion
+ * until it passes — and loosening it is how a suite stops being able to fail.
  *
- * `targets` is not decoration. Both defects below are in the **frozen vanilla
- * reference**, so the vanilla target carries them; the React target must fix
- * them, and this register deliberately does not excuse it there. Without that
- * qualifier the port could inherit the 375px overflow and the sub-AA labels and
- * still pass its own gate — which is the exact hole the register exists to avoid.
+ * The register is currently EMPTY: the two defects the vanilla app carried
+ * (the 375px overflow and the sub-AA labels) were fixed in the port, and the
+ * vanilla code that carried them is deleted. The machinery stays — adding a
+ * measured defect to the React app is a decision recorded here, and it has to
+ * name a defect, not a test that needs adjusting.
  *
  * Keyed by **check id**, not by feature: a feature with two checks must be able
  * to carry one declared defect without exempting the other, or the exemption
  * would mask a fresh regression in the check that was passing.
  *
- * Every entry is printed on every run with its reason and its targets, so a
- * declared defect cannot rot into an assumption. Anything not listed here fails
- * the run. Adding an id is a decision, and it has to name a defect, not a test
- * that needs adjusting.
+ * Every entry is printed on every run with its reason, so a declared defect
+ * cannot rot into an assumption. Anything not listed here fails the run.
  */
-export const KNOWN_DEFECTS = {
-  "i-design-08": {
-    targets: ["vanilla"],
-    reason:
-      "at 375px the page really does scroll sideways (89px), because an absolutely-positioned " +
-      ".visually-hidden span inside the toolbar's horizontally-scrolling strip has no positioned " +
-      "ancestor, so it escapes the strip's clip and extends the document. Measured two ways — " +
-      "documentElement.scrollWidth 464 against a 375 viewport, and window.scrollTo(400,0) leaving " +
-      "scrollX at 89 — see ISSUES.md. Carried on the vanilla reference because changing styles.css " +
-      "mid-port would invalidate the comparison; the port must not inherit it, so it is red there.",
-  },
-  "i-colour-05": {
-    targets: ["vanilla"],
-    reason:
-      "three 10px muted labels sit below the 4.5:1 the project applies to every other label of their " +
-      "kind: `.col-hidden` (the +N HIDDEN badge) at 4.17, `.drawer-kicker` at 4.04 and `.field-label` " +
-      "at 4.17, all three on #6b7280 (`--color-foreground-muted`). The sweep recorded in " +
-      "openkanban-mvp.md moved + ADD CARD, the counters, the filter group names, the ticket number and " +
-      "the storage lamp from muted to secondary for exactly this reason and did not reach these three. " +
-      "Measured against the composited background, so the numbers hold on both the page fill and the " +
-      "drawer header's subtle fill. Carried on the vanilla reference; the port must move them.",
-  },
-};
+export const KNOWN_DEFECTS = {};
 
 /** The reason a check may be excused on this target, or null if it may not. */
 export function knownDefectFor(checkId, targetId) {
@@ -196,17 +170,14 @@ export function knownDefectFor(checkId, targetId) {
 }
 
 /**
- * Features only one app can express, and why.
+ * Features a capability gate, and why.
  *
- * The drag gesture is the asymmetry the port deliberately creates: Playwright
- * fires `dragstart` and `dragover` but can never synthesise an HTML5 `drop`, so
- * an insertion relative to a card, the drop markers and the gesture's escape
- * hatch are not reachable in the vanilla app at all. They were hand-verified
- * before the port and `ISSUES.md` records that as a known limitation.
+ * The drag checks declare `pointer-drag`: dnd-kit moves on pointer events,
+ * which Playwright can synthesise — this is the asymmetry the port deliberately
+ * created in the app's favour.
  *
  * A feature listed here is reported by the ledger as **deferred** on a target
- * that lacks the capability — never as missing, and never as covered. The
- * vanilla gate therefore does not fail for behaviour it cannot express, and the
+ * that lacks the capability — never as missing, and never as covered — and the
  * gap is printed rather than hidden.
  */
 export const FEATURE_CAPABILITY = {
@@ -269,9 +240,10 @@ export const RETIRED = {
 /**
  * The pre-port suite's 31 checks, mapped to their successors.
  *
- * `tests/smoke.mjs` is the vanilla deploy gate and stays untouched for the whole
- * of the port. This table is how its coverage is proven to have moved rather
- * than evaporated: each name must map to a feature id that some check covers.
+ * `tests/smoke.mjs` was the pre-port deploy gate and is deleted along with the
+ * vanilla app it drove. This table is how its coverage is proven to have moved
+ * rather than evaporated: each name must map to a feature id that some check
+ * covers.
  */
 export const LEGACY = {
   "cold start seeds the sample board": ["A1"],

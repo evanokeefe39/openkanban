@@ -1,24 +1,15 @@
 name: CI
 
-# The app is static files, so "does it work" cannot be answered by a build
-# succeeding. The gate is a real browser driving the real page.
+# The app is a Next.js static export, so "does it work" cannot be answered by a
+# build succeeding. The gate is a real browser driving the real page.
 #
-# Four jobs, ordered by cost — the cheap layers answer first, so a broken
+# Two jobs, ordered by cost — the cheap layers answer first, so a broken
 # reducer or a drawer that drops an edit fails in under a minute instead of
 # after a browser suite:
 #   unit       — Vitest: the pure model in `lib/`, plus the component layer
 #                (React Testing Library + user-event in jsdom). No browser.
-#   smoke      — the legacy 31-check deploy gate, driving the frozen vanilla app
 #   behaviour  — the GATE: the behaviour suite against the React app, built from
 #                source and enforced against the coverage ledger
-#   reference  — the vanilla app in report mode, kept green beside the gate so
-#                "green on the reference, red on the new app" still names a
-#                regression instead of being invisible
-#
-# The gate flipped from the reference to the app once the port was reviewed and
-# confirmed. The vanilla app is a historical comparison now: it is still driven
-# and its defects are still printed, but it no longer decides whether this repo
-# ships, and the port is free to improve past it.
 on:
   push:
     branches: [main]
@@ -52,38 +43,6 @@ jobs:
       - name: Model and component tests
         run: npm run lib:test
 
-  smoke:
-    name: Smoke test in a real browser
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install the test harness
-        run: npm ci
-
-      - name: Install chromium
-        run: npx playwright install --with-deps chromium
-
-      - name: Syntax check
-        run: npm run check
-
-      - name: Smoke test
-        run: npm test
-
-      - name: Upload what failed
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: smoke-failure
-          path: tests/.artifacts/
-          if-no-files-found: ignore
-
   behaviour:
     name: Behaviour suite against the React app (GATE)
     runs-on: ubuntu-latest
@@ -112,37 +71,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: behaviour-app
-          path: tests/.artifacts/
-          if-no-files-found: ignore
-
-  reference:
-    name: Behaviour suite against the vanilla reference (report only)
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - run: npm ci
-
-      - name: Install chromium
-        run: npx playwright install --with-deps chromium
-
-      # Report mode, deliberately: this app is frozen as the comparison baseline,
-      # and the defect that reds it (a blur-commit rebuilding the drawer under the
-      # pointer, ISSUES.md) is one the port has already fixed rather than
-      # inherited. Blocking on it would hold the port to a defect it no longer has.
-      - name: Behaviour suite (reference)
-        run: npm run behaviour:reference
-
-      - name: Upload the reference report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: behaviour-reference
           path: tests/.artifacts/
           if-no-files-found: ignore

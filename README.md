@@ -4,7 +4,7 @@
 
 A kanban board where dependencies are part of the data model: a card knows what blocks it, the board refuses to let you forget, and holding one key shows you the whole wiring.
 
-I wanted a simple kanban with dependency tracking, could not find one in a few minutes of looking, and built this instead. The first working version took about an hour. It is three static files with no build step, no dependencies and no server, so it runs from a folder on your laptop exactly as it runs from a URL.
+I wanted a simple kanban with dependency tracking, could not find one in a few minutes of looking, and built this instead. The first working version took about an hour. It is now a React 19 / Next.js 16 app deployed as a static export — the original three-file vanilla version lives in git history on the `feat/mvp` branch.
 
 ![The board as it opens, populated with the sample cards it seeds itself with](docs/screenshots/board.webp)
 
@@ -44,15 +44,21 @@ The graph is the reason the rest of the app is shaped the way it is. Card number
 
 ## Running it
 
-Open `index.html`. That is the whole story — the app is designed to work from `file://` as well as from a server.
-
-If you would rather serve it (which is how it runs in CI):
+The app is a Next.js static export. For development:
 
 ```sh
-npm run serve     # http://127.0.0.1:8080, no-cache
+npm install
+npm run dev      # next dev
 ```
 
-Use that rather than `python -m http.server`. Python's server sends `Last-Modified` with no `Cache-Control`, so Chromium applies heuristic freshness and will happily serve you the *previous* document after an edit — which looks exactly like a CSS bug and is not one. [`tools/serve.mjs`](tools/serve.mjs) sends `Cache-Control: no-store` and costs nothing to run. The whole story is in [`LEARNINGS.md`](LEARNINGS.md).
+For a production build and a local look at what deploys:
+
+```sh
+npm run build    # static export -> out/, plus the TypeScript check
+npm run serve    # http://127.0.0.1:8080, no-cache
+```
+
+Use `npm run serve` rather than `python -m http.server`. Python's server sends `Last-Modified` with no `Cache-Control`, so Chromium applies heuristic freshness and will happily serve you the *previous* document after an edit — which looks exactly like a CSS bug and is not one. [`tools/serve.mjs`](tools/serve.mjs) sends `Cache-Control: no-store` and costs nothing to run. The whole story is in [`LEARNINGS.md`](LEARNINGS.md).
 
 ### Keyboard
 
@@ -68,93 +74,58 @@ The `MOVE TO` row in the card drawer is the keyboard path for moving a card, and
 
 ## Where your data lives
 
-The vanilla app (`index.html`) keeps two `localStorage` keys, deliberately separate:
-
-| Key | Holds | Notes |
-| --- | --- | --- |
-| `openkanban.board.v1` | The document: name, columns, cards, edges, card numbers | What export writes and import replaces |
-| `openkanban.board.v1.corrupt` | The payload that would not parse | Quarantined, never silently dropped |
-| `openkanban.view.v1` | Density and the six display toggles | Per-browser preference; importing a board must not rewrite it |
-
-A stored board is validated on load and repaired where it can be (a document saved without card numbers gets numbers in creation order, and says so). Anything unreadable is quarantined under `<key>.corrupt` and a fresh board is seeded, so a bad payload costs you a warning, not a silent wipe of the good copy.
-
-The React app keeps a **collection** of boards instead, one key per board, because with a single key any write to "the board" is a write to the only board there is — which is how an unreadable payload came to be replaced by the sample:
+The app keeps a **collection** of boards, one key per board, because with a single key any write to "the board" is a write to the only board there is — which is how an unreadable payload once came to be replaced by the sample:
 
 | Key | Holds | Notes |
 | --- | --- | --- |
 | `openkanban.boards.v1` | The index: `{version, activeId, ids}` | Which boards exist and which is open. Rebuildable by scanning the keys, so losing it loses only the order |
 | `openkanban.boards.v1.<id>` | One board document | The unit export writes and import replaces |
 | `openkanban.boards.v1.<id>.corrupt` | That board's unparseable payload | Per board, so two unreadable boards cannot collide |
-| `openkanban.view.v1` | Density and the six display toggles | Shared, as above |
+| `openkanban.board.v1` | The legacy single-board key | Read once as a migration; a board stored there by the older build is adopted into the collection and the key is left untouched |
+| `openkanban.view.v1` | Density and the six display toggles | Per-browser preference; importing a board must not rewrite it |
+
+A stored board is validated on load and repaired where it can be (a document saved without card numbers gets numbers in creation order, and says so). Anything unreadable is quarantined and a fresh sample opens under a *new* id, so a bad payload costs you a warning, not a silent wipe of the good copy.
 
 Its guarantees, all asserted in `tests/behaviour/k-boards.mjs`:
 
 - a board that cannot be read is left **byte-identical** at its own key, before and after any later edit — a copy goes to `<key>.corrupt` and a sample opens under a *new* id, so the failed payload is never given the sample's id and never overwritten;
 - a board from a **newer schema** (an older build after a rollback) is refused the same way rather than destroyed;
-- a board saved by the vanilla app under `openkanban.board.v1` is **adopted** into the collection on first load, and that key is left untouched — so opening an older build still finds it;
+- a board saved by an older build under `openkanban.board.v1` is **adopted** into the collection on first load, and that key is left untouched — so opening after an upgrade still finds it;
 - a corrupt index is rebuilt from the board keys themselves.
 
 One consequence worth knowing: the shipped sample is a **board in the list** named `SAMPLE`, not a seed that overwrites whatever is stored.
 
 ## Tests and CI
 
-The app has no build, so a green build would prove nothing. The gate drives the real page in a real browser instead — [`tests/smoke.mjs`](tests/smoke.mjs) serves the repo over http, opens it with Playwright, and checks the behaviour the app would be broken without:
-
-- a cold start seeds the sample board; a corrupt payload is quarantined and replaced
-- a card saved without numbers is repaired in creation order rather than quarantined
-- adding a card numbers it and persists it
-- a card with an unfinished blocker reads as blocked, a move into a gated column warns first, and confirming records an override while the card stays flagged
-- a blocker that would close a cycle is refused at the point of adding it
-- holding `D` shows the wiring and releasing clears it
-- a filter chip filters the board, and the pane closes on Escape without losing the filters
-- a view option hides its element and is stored outside the board document
-- export produces a file that imports back to the same board
-- reset only arms on the whole word, wipes every card, keeps the columns, and stays empty after a reload
-- the page logged no errors while any of that happened
+The gate drives the real built export in a real browser instead of trusting a green build — [`tests/behaviour/`](tests/behaviour/) serves `out/` over http, opens it with Playwright, and checks the behaviour the app would be broken without: cold start and seed, corrupt-payload quarantine and repair, persistence, the dependency gate and overrides, cycle refusal, the drag gesture, filters and view options, export/import, reset, multi-board handling, and the page logging no errors while any of that happens.
 
 ```sh
 npm ci
 npx playwright install chromium
-npm test          # 31 checks, ~10s
+npm run behaviour # the gate: builds, then drives every check against the ledger
 npm run check     # syntax check, plus every var() in the CSS must resolve
+npm run lib:test  # Vitest: the pure model + the component layer
 ```
 
 `npm run check` also runs [`tests/check-styles.mjs`](tests/check-styles.mjs), which exists because of a real defect: deleting a CSS token leaves every `var(--that-token)` silently resolving to nothing — no console error, no failed check, just an element with no background. It cross-references every `var(--x)` use against the definitions and fails the build instead.
 
-### The behaviour suite
-
-`tests/smoke.mjs` covers the surface. [`tests/behaviour/`](tests/behaviour/) covers the behaviour, and it exists for the React port: **one set of checks, run against both apps**. The vanilla app is the reference, the port has to satisfy the same contract, and a check that is green on one and red on the other names the regression exactly instead of leaving it to review.
-
-```sh
-npm run behaviour          # the gate: every required feature, against the vanilla app
-npm run behaviour:react    # progress on the port — report only until it is green
-npm run compare            # diff the two reports: green here, red there, is the regression
-```
-
-If the pinned browser download is unavailable (it can be, behind a proxy), any installed Chromium-family browser will do — the behaviour suite launches the same browser, so the override applies to both:
+If the pinned browser download is unavailable (it can be, behind a proxy), any installed Chromium-family browser will do:
 
 ```bash
-OK_BROWSER_CHANNEL=msedge npm test
 OK_BROWSER_CHANNEL=msedge npm run behaviour
 ```
 
-Two defects the suite found in the frozen reference are carried rather than fixed, because fixing them during the port would invalidate the comparison: a page-level horizontal scroll at a 375px viewport, and three muted 10px labels below the 4.5:1 the project applies everywhere else. Both are in [`ISSUES.md`](ISSUES.md), and both are listed by `KNOWN_DEFECTS` in the inventory — the checks assert the correct behaviour and stay red, and every run prints them with their reasons rather than hiding them behind a loosened assertion.
+The suite keeps a **coverage ledger** ([`inventory.mjs`](tests/behaviour/inventory.mjs)): every behaviour the app must have is an id, at least one check must cover it, and every one of the pre-port suite's checks must have a live successor. An uncovered feature fails the run, so "nothing was dropped" is asserted rather than promised. Measured defects the app actually has may be carried in `KNOWN_DEFECTS` — printed with their reasons on every run, never hidden behind a loosened assertion.
 
-The suite keeps a **coverage ledger** ([`inventory.mjs`](tests/behaviour/inventory.mjs)): every behaviour the app must preserve is an id, at least one check must cover it, and every one of `smoke.mjs`'s checks must have a live successor. An uncovered feature fails the run, so "nothing was dropped" is asserted rather than promised. Two asymmetries are declared rather than hidden: the drag gesture can only be driven on the React target (Playwright cannot synthesise an HTML5 `drop`), and `file://` only works on the vanilla one.
-
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the smoke suite and the behaviour gate on every pull request and on every push to `main`, uploads dumps to `tests/.artifacts/` when either fails, and reports the port's progress without gating on it. Playwright is a dev dependency for the test harness; the vanilla app itself still has no dependencies at all.
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the Vitest suite and the behaviour gate on every pull request and on every push to `main`, and uploads screenshots and reports to `tests/.artifacts/` when the gate fails. Playwright is a dev dependency for the test harness.
 
 ## Deploying
 
-Any static host works, because there is nothing to build. On Vercel: import the repository, leave the framework preset as **Other**, leave the build command empty, and let it serve the repository root. [`vercel.json`](vercel.json) adds the two things worth adding — `Cache-Control: max-age=0, must-revalidate` so a deploy takes effect on the next load instead of leaving someone on last week's markup, and `nosniff` / `no-referrer` / `DENY` frame headers.
+The app is a Next.js static export. On Vercel: import the repository; the framework preset is pinned to **Next.js** in `package.json`, so detection cannot guess. The build emits `out/` and Vercel serves it. [`vercel.json`](vercel.json) adds the two things worth adding — `Cache-Control: max-age=0, must-revalidate` so a deploy takes effect on the next load instead of leaving someone on last week's markup, and `nosniff` / `no-referrer` / `DENY` frame headers.
 
 ## Roadmap
 
-**A port to React + Next.js is in progress on `feat/next-react-port`.** This README describes the app as it is today — three static files you can open from a folder — and that is still what ships until the port is verified. Two things are worth knowing up front: the port adds a build step to a project whose selling point is having none, and it **loses `file://` openability**, because a Next static export emits absolute asset paths that resolve against the filesystem root. That loss was confirmed by a test in Phase 0 rather than discovered at cutover, and both of those costs were accepted knowingly.
-
-The port's plan is [`tasks/plans/next-react-port.md`](tasks/plans/next-react-port.md); the feature inventory and the dual-target behaviour suite that will decide whether it is correct is [`tasks/plans/react-port-validation.md`](tasks/plans/react-port-validation.md).
-
-Undo/redo, multiple boards, and an `npx` package that puts a local server, a CLI and an MCP server in front of the same board so an agent can read and write it rather than only render it — plus what was considered and rejected, and why. See [`ROADMAP.md`](ROADMAP.md).
+Undo/redo, an `npx` package that puts a local server, a CLI and an MCP server in front of the same board so an agent can read and write it rather than only render it — plus what was considered and rejected, and why. See [`ROADMAP.md`](ROADMAP.md).
 
 ## Design notes
 
@@ -173,12 +144,14 @@ The build's specification, verification log and the numbers behind claims like t
 ## Repository layout
 
 ```
-index.html                the document: board, drawers, dialogs
-styles.css                all of the design language
-app.js                    one IIFE: model, graph, render, storage
-tests/smoke.mjs           the deploy gate, driven through a real browser
+app/                      the React app: pages and components
+components/               the UI tree: board, shell, overlays
+lib/                      the pure model, framework-free TypeScript
+stores/                   state and the single commit path
+styles/                   one sheet per surface, tokens in 01-tokens.css
+tests/behaviour/          the behaviour suite, driven through a real browser
 tests/check-styles.mjs    fails the build if a var() has no definition
-tools/serve.mjs           the no-cache dev server
+tools/serve.mjs           the no-cache static server
 docs/screenshots/         the images in this README
 tasks/plans/              specification, decisions and verification log
 .github/workflows/ci.yml  runs the gate on every pull request
@@ -226,7 +199,7 @@ WHERE type = 'message' AND message.role = 'assistant';
 | Cache reads | 78,054,272 |
 | Total tokens | 80,226,486 |
 | Cost | $1.68 |
-| App code | 3,829 lines across `index.html`, `styles.css`, `app.js` |
+| App code | 3,829 lines across `index.html`, `styles.css`, `app.js` (the original vanilla build, since deleted — see `feat/mvp`) |
 | Test harness and config | 486 lines |
 
 Roughly a cent a minute, and about four hundredths of a cent per line that survived to the end — of which the majority was spent on the parts you cannot see in a screenshot: the derived-blocked model, the validation and repair path, and measuring contrast rather than guessing at it.

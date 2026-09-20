@@ -5,27 +5,28 @@ one rule that shapes it, how to run and verify it, and the conventions a change 
 
 > **The React 19 / Next.js 16 port is complete and is now the app.** It landed on
 > `feat/next-react-port` through Phases 0–5: the pure model as framework-free TypeScript, the
-> component tree, drag and drop on pointer events, and the dual-target behaviour suite that proves
-> it. The gate flipped at cutover — `npm run behaviour` drives the **React app** — and the vanilla
-> `index.html` / `styles.css` / `app.js` are retained as a **frozen historical reference**.
+> component tree, drag and drop on pointer events, and the behaviour suite that proves
+> it. The gate is `npm run behaviour` and it drives the **React app**. The vanilla
+> `index.html` / `styles.css` / `app.js` are deleted; that implementation is preserved in
+> git history on the `feat/mvp` branch.
 > Read [`tasks/plans/next-react-port.md`](tasks/plans/next-react-port.md) for the phases and
 > [`tasks/plans/react-port-validation.md`](tasks/plans/react-port-validation.md) for the feature
 > inventory, the DOM contract, and the coverage ledger.
 >
 > **The port is no longer required to mirror the vanilla app.** It was held to bug-for-bug
-> agreement while the comparison was the acceptance test; that test has done its job. Defects the
-> vanilla app carries are now fixed in the port rather than inherited — see the drawer blur-commit
-> in `ISSUES.md`. The Architecture and Conventions sections below still describe the **vanilla**
-> implementation; the port's structure is `lib/` (pure model), `stores/` (state),
-> `components/{board,shell,overlays}` (UI) and `styles/` (one sheet per surface),
-> with the components' domain helpers (`add-flow`, `cycle`, `board-name`,
+> agreement while the comparison was the acceptance test; that test has done its job, and
+> the code it compared against is gone. Defects the vanilla app carried are fixed in the
+> port rather than inherited — see the drawer blur-commit in `ISSUES.md`. The Architecture
+> and Conventions sections below now describe the app as it is: `lib/` (pure model),
+> `stores/` (state), `components/{board,shell,overlays}` (UI) and `styles/` (one sheet per
+> surface), with the components' domain helpers (`add-flow`, `cycle`, `board-name`,
 > `move-gate`, `transfer`) living in `lib/` beside the pure model.
 
 ## What this is
 
-A kanban board where **dependencies are the point rather than a decoration**. Three files carry the
-whole app: `index.html`, `styles.css`, `app.js`. No build step, no bundler, no runtime dependencies,
-and it opens from `file://` as well as from a server. It deploys to Vercel as static files.
+A kanban board where **dependencies are the point rather than a decoration**. The React 19 /
+Next.js 16 static export is the app. It deploys to Vercel as static files; `next build`
+emits it to `out/`.
 
 The audience is one person's own work. There are no accounts, no server, and no sync: the board lives
 in the browser's `localStorage`, so a shared URL is a shared *app*, not a shared board.
@@ -53,31 +54,26 @@ The consequences ripple through the code and are easy to break by accident:
 ## Commands
 
 ```bash
-npm run serve     # dev server on :8080, no-cache (use this, not python -m http.server)
-npm run check     # syntax of every entry point + every var() resolves
-npm test          # the smoke suite: 31 checks, real browser, real page
+npm run dev       # next dev
+npm run serve     # static server on :8080 for the built export, no-cache (use this, not python -m http.server)
+npm run check     # syntax of every script + every var() resolves
+npm run lib:test  # Vitest: the pure model + the component layer
 
 npm run build     # the app's static export -> out/ (also runs the TypeScript check)
 npm run behaviour # the acceptance gate: builds, then drives the React app against the ledger
-npm run behaviour:reference  # the frozen vanilla app, report only — never gates
-npm run compare   # diff the two reports: green on vanilla + red on React = a named regression
 ```
 
 `npm run behaviour` is the acceptance gate. It builds the app, drives every check against the real
 export, and enforces a **coverage ledger**: an inventory feature with no covering check fails the run,
-and so does any of `tests/smoke.mjs`'s checks with no live successor. Two asymmetries are declared
-rather than hidden — the drag gesture can only be driven on the React target (Playwright cannot
-synthesise an HTML5 `drop`) and `file://` only works on the vanilla one — and a deferred feature is
-printed, never counted as covered.
-
-`npm run behaviour:reference` drives the vanilla app in **report mode**: it prints its results and its
-declared defects but cannot fail the build. It is a comparison baseline now, not a gate.
+and so does any of the pre-port suite's checks with no live successor. No behaviour is deferred
+today — every check runs on the app; if a future capability gap appears, it is declared in
+`tests/behaviour/capabilities.mjs` and a deferred feature is printed, never counted as covered.
 
 On Windows, Playwright's pinned Chromium download fails on some machines. Run the suite with a
 system browser instead:
 
 ```bash
-OK_BROWSER_CHANNEL=msedge node tests/smoke.mjs
+OK_BROWSER_CHANNEL=msedge npm run behaviour
 ```
 
 CI uses a normal Chromium on `ubuntu-latest` and does not need the override.
@@ -90,29 +86,31 @@ twice. See `LEARNINGS.md`; there is a debugging recipe there for when a change a
 
 ## Architecture
 
-One IIFE in `app.js`, ordered deliberately: constants → utilities → state → storage → graph →
-mutations → render → drawers → drag and drop → bindings → boot. State is two objects:
+The app is a React 19 / Next.js 16 static export. Four layers, each with one job:
 
-- **`board`** — the document: `{version, name, columns, cards}`. Plain, JSON-serialisable, and the
-  only thing that is persisted.
-- **`ui`** — transient view state: query, filters, `activeCardId`, `inlineAdd`, `dragId`/`dragIds`,
-  `selection`, `chainId`, `depsHeld`, `ctrlHeld`, `filterOpen`. Never persisted, never in the board.
+- **`lib/`** — the pure model, framework-free TypeScript: `board.ts` (document, seed, repair),
+  `graph.ts` + `blocked.ts` (derived blocked/override), `move-gate.tsx` (the single
+  `attemptMove`/`applyMove` funnel), `transfer.tsx` (export/import), plus the small helpers
+  (`add-flow`, `cycle`, `board-name`, `format`). Vitest covers all of it.
+- **`stores/`** — state. Every mutation funnels through one commit path that saves and re-renders;
+  components never splice a column's `cardIds` by hand.
+- **`components/{board,shell,overlays}`** — the UI. The shell owns the toolbar, title and drawers;
+  the board owns columns, cards and the drag gesture (dnd-kit, pointer events).
+- **`styles/`** — one sheet per surface, tokens defined once in `styles/01-tokens.css`.
 
-**Every mutation goes through `commit(mutate)`**, which runs the mutation, clears `boardOrigin`,
-saves, and re-renders. If you find yourself calling `saveBoard()` and `render()` by hand, you have
-probably missed the funnel.
+**The one rule** (below) is enforced in `lib/`: `blocked` and `override` are derived, never stored.
 
-Rendering is a full re-render on mutation — cheap at this scale and trivially correct — with two
-deliberate exceptions that patch the DOM in place: `applyChainHighlight()` and `applySelection()`.
-Those exist because a re-render on hover would reset each column's scroll position under the pointer
-and rebuild the checkbox out from under a click. Do not "simplify" them into re-renders.
+Rendering is React's own; the app never reads `localStorage` during render — the shell renders
+deterministically and hydrates from storage in an effect.
 
 Storage keys, all versioned:
 
 | Key | Holds |
 | --- | --- |
-| `openkanban.board.v1` | the board document |
-| `openkanban.board.v1.corrupt` | a payload that failed validation, quarantined not discarded |
+| `openkanban.boards.v1` | the collection index: which boards exist |
+| `openkanban.boards.v1.<id>` | each board document |
+| `openkanban.boards.v1.<id>.corrupt` | a payload that failed validation, quarantined not discarded |
+| `openkanban.board.v1` | the **legacy** single-board key, still read as a one-way migration |
 | `openkanban.view.v1` | view options, deliberately **separate** so importing a board does not rewrite preferences |
 
 ## Conventions
@@ -120,12 +118,12 @@ Storage keys, all versioned:
 - **Branch off `main`, never commit or push to `main`.** Prefixes: `feat|fix|docs|chore|refactor|test|perf|ci|build|release`.
 - **Conventional commits**, `type(scope): summary`. Squash-merge PRs; `git rebase main` to absorb
   upstream, never a merge commit.
-- **No new runtime dependencies.** The zero-dependency property is a feature, not an accident — it is
-  what makes the app openable from a folder and instantaneous to load. Playwright is a devDependency
-  for the test harness only.
-- **No build step.** A `.jsx`, a bundler config or an import map is a regression unless the user asks
-  for it explicitly and understands what it costs.
-- **All user strings go into the DOM via `textContent` or the `el()` helper, never `innerHTML`.**
+- **No new runtime dependencies.** React, Next.js, Zustand and dnd-kit are the whole set, and that is
+  deliberate — every addition is a supply-chain surface and a bundle-size cost. Playwright is a
+  devDependency for the test harness only.
+- **No new build machinery.** The Next.js build is the only build; a bundler config, a second build
+  path or an import map is a regression unless the user asks for it explicitly.
+- **All user strings go into the DOM as text, never `dangerouslySetInnerHTML`.**
   Imported JSON is untrusted input, and the import path is the boundary that makes that a real risk.
 - **Never use PowerShell.** `pip` is never the answer either — but this project has no Python.
 - **Native `<dialog>` + `showModal()`** for every overlay. It buys focus trapping, Escape handling and
@@ -156,14 +154,14 @@ Do not improvise here. The rules are cheap to follow and expensive to break:
 The bar is: **run the thing, observe the result, and say what you observed.** A green check is not
 proof that a feature works.
 
-- `npm run check` and `npm test` are the mechanical gate. Run both before claiming a change is done.
-- The smoke suite drives the real page in a real browser. It reads computed styles, `dataset`
+- `npm run check` and `npm run lib:test` are the mechanical gate. Run both before claiming a change
+  is done.
+- The behaviour suite drives the real export in a real browser. It reads computed styles, `dataset`
   attributes and `localStorage` directly, so it catches what a unit test cannot: a rule that exists
   but does not apply, an attribute the CSS does not match, a stored board that is not what the UI shows.
-- **New behaviour needs a check in `tests/behaviour/`, not in `tests/smoke.mjs`.** The dual-target
-  suite is what the port is judged by; `smoke.mjs` is the legacy deploy gate, kept because every one of
-  its checks still has to map to a live successor. A check that cannot fail is worse than no check;
-  assert the observable outcome, not the implementation.
+- **New behaviour needs a check in `tests/behaviour/`, and an inventory entry in `inventory.mjs`.**
+  The suite is what the app is judged by; an uncovered inventory feature fails the gate. A check that
+  cannot fail is worse than no check; assert the observable outcome, not the implementation.
 - **A check that throws is not a check that failed.** They are separate statuses on purpose: a thrown
   check is a broken selector or fixture, and the runner refuses to let a declared defect absorb one.
   If a check errors, fix the check — do not add it to `KNOWN_DEFECTS`.
@@ -182,6 +180,12 @@ proof that a feature works.
 
 ## Where the other documents live
 
+> **Provenance note.** Comments in the code and prose in `ISSUES.md` cite `app.js` by line
+> number ("ported from app.js:1234"). Those citations resolve only against the deleted vanilla
+> baseline, which lives on the `feat/mvp` branch (`2adec2d`, "docs: license the project under
+> PolyForm Noncommercial 1.0.0"). They are kept because provenance that names its origin is
+> load-bearing; re-resolve them with `git show feat/mvp:app.js` when a citation matters.
+
 | File | What it is for |
 | --- | --- |
 | `README.md` | the public face: what it does, how to run it, how to deploy it |
@@ -189,5 +193,5 @@ proof that a feature works.
 | `ISSUES.md` | bugs found and fixed, and the known limitations that remain |
 | `LEARNINGS.md` | the mistakes already made here, so they are not made twice |
 | `WATCHDOG.md` | reviewer guidance: what to be suspicious of in this codebase |
-| `tasks/plans/openkanban-mvp.md` | the build's specification, defect log and verification tally for the **vanilla** implementation |
-| `tasks/plans/next-react-port.md` | the kickoff plan for the React/Next.js port — read this first if you are starting the migration |
+| `tasks/plans/openkanban-mvp.md` | the build's specification, defect log and verification tally for the original vanilla implementation (historical; the code lives on the `feat/mvp` branch) |
+| `tasks/plans/next-react-port.md` | the React/Next.js port plan — the phases the current app went through |

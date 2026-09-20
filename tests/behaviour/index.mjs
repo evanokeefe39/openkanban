@@ -18,8 +18,8 @@ import kBoards from "./k-boards.mjs";
  *
  * `i-design` and `i-colour` are two files rather than one because the design
  * invariants split cleanly in two: structure and geometry, and colour measured
- * against the floor. `k-boards` is the board collection, a React-only capability
- * the vanilla reference defers.
+ * against the floor. `k-boards` is the board collection, gated by the
+ * `board-collection` capability.
  */
 export const SUITES = [
   aBoot,

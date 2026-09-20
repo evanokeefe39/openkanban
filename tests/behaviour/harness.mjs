@@ -1,23 +1,19 @@
 /**
  * Target lifecycle and read helpers for the behaviour suite.
  *
- * Two targets, one suite. `react` serves the static export in `out/` — the app
- * now, and the gate. `vanilla` serves the repo root — the three frozen static
- * files, kept as the reference target until the React app is personally signed
- * off; it must stay functional and untouched, but it is opt-in
- * (`npm run behaviour:reference`).
+ * One target, one suite. `react` serves the static export in `out/` — the app,
+ * and the gate. (The original vanilla reference target is deleted; that
+ * implementation lives in git history on the `feat/mvp` branch.)
  *
  * This module deliberately carries its own static server instead of sharing
- * `tools/serve.mjs` or the copy inside `tests/smoke.mjs`: the suite must serve an
- * arbitrary root, and `smoke.mjs` is the frozen deploy gate for the vanilla app
- * for the whole of the port. Forty duplicated lines buy a gate that cannot be
- * broken by a change to the thing under test.
+ * `tools/serve.mjs`: the suite must serve an arbitrary root. Forty duplicated
+ * lines buy a gate that cannot be broken by a change to the thing under test.
  */
 import { spawn } from "node:child_process";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, join, normalize, resolve, sep } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
 export const ROOT = resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -26,7 +22,7 @@ export const ARTIFACTS = join(ROOT, "tests", ".artifacts");
 /**
  * The storage layout, as two families rather than one key.
  *
- * The vanilla reference keeps a single board under `openkanban.board.v1`. The
+ * The legacy format kept a single board under `openkanban.board.v1`. The
  * React app stores a collection: an index under `openkanban.boards.v1` naming
  * the boards, and each board document under `openkanban.boards.v1.<id>`, with
  * an unreadable payload copied to `<board key>.corrupt`. The legacy key is
@@ -44,15 +40,8 @@ export const VIEW_KEY = "openkanban.view.v1";
 /** The storage key a board document lives under, from its id. */
 export const boardKey = (id) => `${BOARD_KEY_PREFIX}${id}`;
 
-/** Every target the suite knows how to drive. */
+/** The one target the suite drives. */
 export const TARGETS = {
-  vanilla: {
-    id: "vanilla",
-    label: "vanilla app (index.html + styles.css + app.js)",
-    root: ROOT,
-    entry: "/index.html",
-    build: false,
-  },
   react: {
     id: "react",
     label: "openkanban (next static export in out/)",
@@ -272,8 +261,8 @@ export async function settle(page, base, { entry = "/index.html", timeout = DEFA
  *
  * On the React app the index names it, so the key is read from storage rather
  * than assumed — a check for "the open board" must not care which board that
- * is. On the vanilla app there is no index and the single legacy key is the
- * answer, so the fallback IS the vanilla path: one implementation, no branch.
+ * is. The legacy single-board layout (one key, no index) is the fallback: one
+ * implementation, no branch.
  */
 export const storedBoard = (page) =>
   page.evaluate(
@@ -421,9 +410,6 @@ export const writeReport = async (name, payload) => {
   await writeFile(path, JSON.stringify(payload, null, 2), "utf8");
   return path;
 };
-
-export const fileUrl = (targetId, relativePath = "index.html") =>
-  pathToFileURL(join(TARGETS[targetId].root, relativePath)).href;
 
 /** Build a verdict from a condition, carrying whatever the check measured. */
 export function ok(passed, detail) {
