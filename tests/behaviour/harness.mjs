@@ -26,7 +26,7 @@ export const ARTIFACTS = join(ROOT, "tests", ".artifacts");
 /**
  * The storage layout, as two families rather than one key.
  *
- * The vanilla reference keeps a single board under `openkanban.board.v1`. The
+ * The legacy format kept a single board under `openkanban.board.v1`. The
  * React app stores a collection: an index under `openkanban.boards.v1` naming
  * the boards, and each board document under `openkanban.boards.v1.<id>`, with
  * an unreadable payload copied to `<board key>.corrupt`. The legacy key is
@@ -44,15 +44,8 @@ export const VIEW_KEY = "openkanban.view.v1";
 /** The storage key a board document lives under, from its id. */
 export const boardKey = (id) => `${BOARD_KEY_PREFIX}${id}`;
 
-/** Every target the suite knows how to drive. */
+/** The one target the suite drives. */
 export const TARGETS = {
-  vanilla: {
-    id: "vanilla",
-    label: "vanilla app (index.html + styles.css + app.js)",
-    root: ROOT,
-    entry: "/index.html",
-    build: false,
-  },
   react: {
     id: "react",
     label: "openkanban (next static export in out/)",
