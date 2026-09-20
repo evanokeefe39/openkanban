@@ -83,10 +83,17 @@ export function CardDrawer() {
    * vanilla app and recorded in ISSUES.md; the port must not inherit it.)
    *
    * Deferring the commit by one frame lets the in-flight click finish composing
-   * before the re-render replaces the node it landed on. The pending commit is
-   * tracked in a ref so a close that arrives before the frame still flushes it —
-   * a deferred write that silently vanishes when the drawer shuts would be a
-   * worse bug than the one being fixed.
+   * before the re-render replaces the node it landed on.
+   *
+   * A QUEUE, not a single slot. A ref holding one pending commit loses a write
+   * when a second is queued before the first frame fires — the title's blur and
+   * the notes' blur, or a blur and the close that follows it, and the earlier
+   * edit is gone. Measured: B14 (type a title, Escape, no blur) stored the
+   * previous title. Every queued commit runs, in order, on the next frame.
+   *
+   * The queue is also flushed on unmount, so a close arriving before the frame
+   * cannot drop a write — a deferred edit that silently vanishes when the drawer
+   * shuts would be a worse bug than the one being fixed.
    *
    * Declared here, with the other hooks, and NOT beside the code that uses it:
    * this component returns early when no card is open, so a hook placed after
@@ -94,12 +101,12 @@ export function CardDrawer() {
    * clicked — and React unmounts the whole tree instead of tolerating it. That
    * regression showed up as "clicking a card makes the drawer disappear".
    */
-  const pendingCommit = useRef<(() => void) | null>(null);
+  const pendingCommits = useRef<Array<() => void>>([]);
   useEffect(
     () => () => {
-      const flush = pendingCommit.current;
-      pendingCommit.current = null;
-      flush?.();
+      const queued = pendingCommits.current;
+      pendingCommits.current = [];
+      for (const flush of queued) flush();
     },
     []
   );
@@ -116,11 +123,11 @@ export function CardDrawer() {
   const commitCard = (mutate: (draft: Board) => void) => useBoardStore.getState().commit(mutate);
 
   const deferredCommit = (mutate: (draft: Board) => void) => {
-    pendingCommit.current = () => commitCard(mutate);
+    pendingCommits.current.push(() => commitCard(mutate));
     requestAnimationFrame(() => {
-      const flush = pendingCommit.current;
-      pendingCommit.current = null;
-      flush?.();
+      const queued = pendingCommits.current;
+      pendingCommits.current = [];
+      for (const flush of queued) flush();
     });
   };
 
@@ -146,6 +153,12 @@ export function CardDrawer() {
   };
 
   const flushFields = () => {
+    // Drain anything a blur queued before writing the drafts, so a close cannot
+    // land on top of a pending edit and lose it (and so the two writes happen in
+    // the order the user made them).
+    const queued = pendingCommits.current;
+    pendingCommits.current = [];
+    for (const flush of queued) flush();
     if (title.trim().replace(/\s+/g, " ") && title.trim().replace(/\s+/g, " ") !== target.title) {
       updateTitle(title);
     } else if (!title.trim()) {
