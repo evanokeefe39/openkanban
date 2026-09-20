@@ -4,30 +4,28 @@ Ordered by preference, not by size. Nothing here is started unless stated.
 
 ## In progress
 
-### Port to React + Next.js
+### Port to React + Next.js — DONE
 
-See [`tasks/plans/next-react-port.md`](tasks/plans/next-react-port.md) for the kickoff plan — phases,
-packages, invariants and risks.
+Landed and merged; the React 19 / Next.js 16 app on `main` is the product. A behaviour-preserving
+port with a Tailwind theme carrying the existing design tokens, Zustand for the board and view
+stores, and dnd-kit replacing the hand-rolled HTML5 drag. Static export, because there is no server
+in this product and there never will be: no accounts, no collaboration, no central database, and a
+board stays in the browser that made it.
 
-A behaviour-preserving port to React 19 / Next.js 16, with a Tailwind theme carrying the existing
-design tokens, Zustand for the board and view stores, and dnd-kit replacing the hand-rolled HTML5
-drag. Static export, because there is no server in this product and there never will be: no accounts,
-no collaboration, no central database, and a board stays in the browser that made it.
-
-This reverses the rejection recorded at the bottom of this file. That analysis was not wrong — the
+This reversed the rejection recorded at the bottom of this file. That analysis was not wrong — the
 reversal is a direction decision, and the entry is kept so it is not re-derived.
 
 ## Next
 
 ### Undo / redo — `Ctrl+Z` / `Ctrl+Shift+Z`
 
-The most-wanted feature and, on inspection, the cheapest. `commit(mutate)` in `app.js` is already the
-single funnel every document change passes through — 16 call sites, each doing mutate → save →
-render. The board is a plain JSON-serialisable object that `saveBoard()` and `exportBoard()` already
-serialise. So the shape is:
+The most-wanted feature and, on inspection, the cheapest. The store's single commit funnel is already
+the one path every document change passes through — each site doing mutate → save → render. The
+board is a plain JSON-serialisable object that the same serialisation `exportBoard()` uses covers.
+So the shape is:
 
-- snapshot `structuredClone(board)` inside `commit()` before mutating, push onto a bounded stack,
-  clear the redo stack;
+- snapshot `structuredClone(board)` inside the commit path before mutating, push onto a bounded
+  stack, clear the redo stack;
 - a `keydown` binding for `Ctrl/Cmd+Z` and `Ctrl/Cmd+Shift+Z`, guarded the way the other hotkeys are
   (ignored while a text field has focus, ignored while a dialog is open);
 - coalescing by card id, because `flushCardFields()` can commit again on drawer close, so one visible

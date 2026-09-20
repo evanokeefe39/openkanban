@@ -176,11 +176,13 @@ and labels, including the Escape-with-no-blur case B14 covers.
 
 > **Status, 2026-09-20.** The port has landed and merged (`#5`), so the premise below several of these
 > entries — that the vanilla `app.js`/`styles.css` are frozen as the port's reference and these defects
-> must wait — **has expired**. They are the port's own to fix now, in its files
+> must wait — **has expired twice over**: the port is the product, and the vanilla code has since been
+> deleted outright (it lives in git history on the `feat/mvp` branch; `git ls-remote origin feat/mvp`
+> confirms it is still on the remote). They are the port's own to fix now, in its files
 > (`components/`, `styles/`), with the behaviour suite as the proof. The entries' measurements stand;
-> only the "deferred because frozen" framing has aged out. Two of them (`i-design-08`, `i-colour-05`)
-> are still carried on the *vanilla* target in `KNOWN_DEFECTS`, which remains correct: the vanilla app
-> stays frozen forever as the comparison baseline, so its copies of these defects stay declared there.
+> only the "deferred because frozen" framing has aged out. The two defects that were carried in
+> `KNOWN_DEFECTS` (`i-design-08`, `i-colour-05`) were fixed in the port and their register entries were
+> removed with the vanilla code.
 
 **A drawer control's click is silently lost when a text edit is pending.** Found 2026-09-18, reproduced
 with a trusted browser click, and deliberately **not** fixed: `app.js` is frozen as the port's
@@ -294,12 +296,11 @@ vanilla target only.
 
 Real, accepted, and worth knowing before someone reports them as new.
 
-- **Drag and drop is written but not yet executed.** Playwright's synthetic mouse drag fires `dragstart`
-  and `dragover` but never `drop`, so the behaviour suite's five drag checks (D1, D3, D6, D7, D8) are
-  declared `pointer-drag`-bound and reported as **deferred** on the vanilla app rather than as coverage;
-  they are the point of the React target in Phase 4, where a real input-injected drag is the first thing
-  that executes them. Until then the gesture is verified by hand, and "drag ordering is covered" is not
-  a claim this repo can make.
+- **Drag and drop, resolved 2026-09 by the port.** The original limitation was that Playwright's
+  synthetic mouse drag fires `dragstart` and `dragover` but never `drop`, so the five drag checks
+  (D1, D3, D6, D7, D8) could never execute against the vanilla app's HTML5 drag. dnd-kit moves on
+  pointer events, which Playwright can synthesise, so those checks now execute and pass on the app;
+  the vanilla code they were deferred on is deleted (see `feat/mvp`).
 - **Reset does not clear filters; import does.** Deliberate and asymmetric: an import replaces the
   board with a different one, where a stale filter would hide everything; a reset leaves a visible
   search box and visible chips, so silently changing the view would be a second, unasked-for action.
