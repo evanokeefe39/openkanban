@@ -31,10 +31,12 @@ export function ConfirmDialog() {
       aria-labelledby="confirm-title"
       ref={ref}
       onClose={() => {
-        const action = onOkRef.current;
+        // A close that did not come from OK — Escape, the backdrop, or the effect
+        // unmounting the spec — must NOT run the action. OK clears this ref
+        // itself before closing, having already run it, so anything still set
+        // here is a dismissal: drop it and close.
         onOkRef.current = null;
         closeConfirm();
-        if (action) action();
       }}
     >
       <h2 className="modal-title" id="confirm-title">
@@ -59,7 +61,19 @@ export function ConfirmDialog() {
           className={`btn ${spec?.danger ? "danger" : "primary"}`}
           id="confirm-ok"
           type="button"
-          onClick={() => ref.current?.close()}
+          onClick={() => {
+            // Run the action FIRST, then close. The reverse order — action in
+            // `onClose`, as this was — makes "the dialog closed" happen before
+            // "the move was written", so anything observing the close (a check
+            // reading storage, a second tab) sees the pre-confirm state and
+            // races a write that has not happened yet. Measured: E5 read the
+            // stored columns as unchanged while the override chip was already
+            // on screen.
+            const action = onOkRef.current;
+            onOkRef.current = null;
+            if (action) action();
+            ref.current?.close();
+          }}
         >
           {spec?.okLabel ?? "CONFIRM"}
         </button>
