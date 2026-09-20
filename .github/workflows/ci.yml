@@ -84,6 +84,13 @@ jobs:
       - name: Behaviour suite
         run: npm run behaviour
 
+      # TEMPORARY diagnostic: the drawer close path fails only on CI. This prints
+      # the write order relative to the close event so the difference is visible
+      # instead of inferred. Remove once the failure is understood.
+      - name: Diagnose the drawer close path
+        if: always()
+        run: node tests/.scratch/diagnose-drawer.mjs || true
+
       - name: Upload the report and any failure screenshots
         if: always()
         uses: actions/upload-artifact@v4
