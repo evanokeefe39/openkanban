@@ -6,7 +6,7 @@ import { useViewStore } from "@/stores/view.store";
 import { formatCounters } from "@/lib/format";
 import type { FilterState } from "@/lib/format";
 import { commitBoardName } from "@/lib/board-name";
-import { ChevIcon, FilterIcon, GridIcon, SlidersIcon, TrashIcon } from "@/components/chrome/icons";
+import { ChevIcon, FilterIcon, GridIcon, SlidersIcon, TrashIcon } from "@/components/shell/icons";
 
 /**
  * The board title, editable in place: click it (or focus it and press Enter or
