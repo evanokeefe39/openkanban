@@ -2,8 +2,7 @@
  * The board collection — several boards, each under its own storage key.
  *
  * Owns features K1–K9 (see `inventory.mjs`; the capability is declared in
- * `capabilities.mjs` as a React-only feature, so the vanilla reference defers
- * them rather than failing them):
+ * `capabilities.mjs`):
  *   K1  a board saved under the old single key is adopted, and that key stays byte-identical
  *   K2  every board is saved under its own key, so one board cannot overwrite another
  *   K3  an unreadable board is left byte-identical at its key, before and after an edit
