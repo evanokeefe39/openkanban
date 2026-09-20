@@ -143,29 +143,28 @@ COMPACT density all five fit.
 **The toolbar is ~13px off true centre.** The button cluster is wider than the brand cluster; centring
 is of the search field, which is what was asked for.
 
-**The drawer's close-flush does not race the `close` event — measured, not argued.** B7 and B14 fail on
-CI and pass locally, and a plausible explanation was that the checks read storage in the window between
-the dialog reporting closed and the flush writing. That explanation is **wrong**, and it was disproved in
-a real browser rather than reasoned about:
+**The drawer's close-flush checks raced the write — found by measurement, fixed by settling the read.**
+B7 and B14 failed on CI and passed locally. The first explanation — that the checks read storage in the
+window between the dialog reporting closed and the flush writing — was tested in a real browser and
+looked **disproven**: on this machine the write is in storage the instant `open` flips false, because
+`onClose` → `flushFields()` → `commit()` → `persist()` → `localStorage.setItem` runs in one synchronous
+task. What that measurement actually established was the ordering *on a slow local runner*; it could not
+see the runner it was arguing about.
 
-| Sample | Stored title |
-| --- | --- |
-| after typing into `#card-title` | `Design tokens + app shell` (nothing written) |
-| immediately before Escape | `Design tokens + app shell` (still nothing) |
-| the instant `open === false` | `Flushed by escape` — **already written** |
-| one animation frame later | `Flushed by escape` |
+The CI evidence that settled it: run #35500914581's B7 detail showed `textPersisted: false` at read 3
+while `final.title` — read at the end of the same check — read `"Renamed card"`. The write landed; the
+read was early. On a fast headless runner the blur a close causes queues its commit for the next
+animation frame, and the check's read observed `open === false` before that frame. B7 lost the race on
+all five CI runs and never locally; B14 on four of five.
 
-The sequence is `onClose` → `flushFields()` → `commit()` → `persist()` → `localStorage.setItem`, all in
-one synchronous task, and `page.waitForFunction` polls on animation frames — so it cannot observe
-`open === false` before that task has finished. The check cannot lose the race it was suspected of
-losing. Typing alone writes nothing (the first two rows), which is correct: the drawer holds title,
-notes and due as drafts and commits them on blur or close.
+The fix is in the checks, not the app: both now wait two frames after the drawer closes before reading
+storage, exactly as B15 already does. The assertions are untouched, and a genuinely missing write still
+fails the check — the wait cannot paper over an app defect, only stop a correct one from being read too
+early. Commit `e5e5c1d`; the gate has been green since.
 
-The real cause of the CI-only failure is therefore still **open**, and this rules out the most attractive
-explanation for it. What is ruled out matters as much as what is not: the drawer's persistence logic is
-sound, which the component tests in `app/board/CardDrawer.test.tsx` independently confirm by asserting
-the stored document. The remaining candidate is environmental — a CI-runner difference in how the
-synthetic `Escape` reaches a native `<dialog>`.
+The app's persistence logic is independently confirmed by the component layer, which asserts the
+*stored* document (read back out of `localStorage`, not in-memory state) for title, notes, due, priority
+and labels, including the Escape-with-no-blur case B14 covers.
 
 ## Open — found while building the port's behaviour suite
 
