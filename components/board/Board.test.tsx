@@ -4,7 +4,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { DndContext } from '@dnd-kit/core';
 import { Board } from '@/components/board/Board';
-import { ToastHost } from '@/components/chrome/ToastHost';
+import { ToastHost } from '@/components/shell/ToastHost';
 import { ConfirmDialog } from '@/components/overlays/ConfirmDialog';
 import { attemptMove } from '@/lib/move-gate';
 import { useBoardStore } from '@/stores/board.store';

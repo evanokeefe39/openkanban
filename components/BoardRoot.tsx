@@ -8,17 +8,17 @@ import { boardKey, serializeBoard } from "@/lib/storage";
 import { blockedChain, closure } from "@/lib/graph";
 import { pushToast } from "@/stores/toast.store";
 import { requestImport } from "@/lib/transfer";
-import { TopBar } from "@/components/chrome/TopBar";
-import { StatusRow } from "@/components/chrome/StatusRow";
-import { FilterPanel } from "@/components/chrome/FilterPanel";
-import { SelectionBar } from "@/components/chrome/SelectionBar";
+import { TopBar } from "@/components/shell/TopBar";
+import { StatusRow } from "@/components/shell/StatusRow";
+import { FilterPanel } from "@/components/shell/FilterPanel";
+import { SelectionBar } from "@/components/shell/SelectionBar";
 import { Board } from "@/components/board/Board";
 import { CardDrawer } from "@/components/overlays/CardDrawer";
 import { SettingsDrawer } from "@/components/overlays/SettingsDrawer";
 import { BoardsDrawer } from "@/components/overlays/BoardsDrawer";
 import { ConfirmDialog } from "@/components/overlays/ConfirmDialog";
 import { ResetDialog } from "@/components/overlays/ResetDialog";
-import { ToastHost } from "@/components/chrome/ToastHost";
+import { ToastHost } from "@/components/shell/ToastHost";
 import { DragLayer } from "@/components/board/DragLayer";
 
 /**

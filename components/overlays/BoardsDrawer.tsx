@@ -5,7 +5,7 @@ import { useBoardStore } from "@/stores/board.store";
 import { useViewStore } from "@/stores/view.store";
 import { boardKey } from "@/lib/storage";
 import { exportBoard } from "@/lib/transfer";
-import { DownloadIcon, UploadIcon } from "@/components/chrome/icons";
+import { DownloadIcon, UploadIcon } from "@/components/shell/icons";
 
 /**
  * The boards drawer — every board saved in this browser, one per storage key.

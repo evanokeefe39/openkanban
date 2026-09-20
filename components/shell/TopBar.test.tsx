@@ -1,8 +1,8 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { TopBar } from '@/components/chrome/TopBar';
-import { ToastHost } from '@/components/chrome/ToastHost';
+import { TopBar } from '@/components/shell/TopBar';
+import { ToastHost } from '@/components/shell/ToastHost';
 import { useBoardStore } from '@/stores/board.store';
 import { useViewStore } from '@/stores/view.store';
 import { seedBoard } from '@/lib/board';

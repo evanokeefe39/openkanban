@@ -17,7 +17,7 @@ one rule that shapes it, how to run and verify it, and the conventions a change 
 > vanilla app carries are now fixed in the port rather than inherited — see the drawer blur-commit
 > in `ISSUES.md`. The Architecture and Conventions sections below still describe the **vanilla**
 > implementation; the port's structure is `lib/` (pure model), `stores/` (state),
-> `components/{board,chrome,overlays}` (UI) and `styles/` (one sheet per surface),
+> `components/{board,shell,overlays}` (UI) and `styles/` (one sheet per surface),
 > with the components' domain helpers (`add-flow`, `cycle`, `board-name`,
 > `move-gate`, `transfer`) living in `lib/` beside the pure model.
 
