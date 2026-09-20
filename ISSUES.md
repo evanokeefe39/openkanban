@@ -174,6 +174,14 @@ and labels, including the Escape-with-no-blur case B14 covers.
 
 ## Open — found while building the port's behaviour suite
 
+> **Status, 2026-09-20.** The port has landed and merged (`#5`), so the premise below several of these
+> entries — that the vanilla `app.js`/`styles.css` are frozen as the port's reference and these defects
+> must wait — **has expired**. They are the port's own to fix now, in its files
+> (`components/`, `styles/`), with the behaviour suite as the proof. The entries' measurements stand;
+> only the "deferred because frozen" framing has aged out. Two of them (`i-design-08`, `i-colour-05`)
+> are still carried on the *vanilla* target in `KNOWN_DEFECTS`, which remains correct: the vanilla app
+> stays frozen forever as the comparison baseline, so its copies of these defects stay declared there.
+
 **A drawer control's click is silently lost when a text edit is pending.** Found 2026-09-18, reproduced
 with a trusted browser click, and deliberately **not** fixed: `app.js` is frozen as the port's
 reference, so a change to it during the port would invalidate the comparison.
