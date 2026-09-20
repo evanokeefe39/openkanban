@@ -3,7 +3,11 @@ name: CI
 # The app is static files, so "does it work" cannot be answered by a build
 # succeeding. The gate is a real browser driving the real page.
 #
-# Three jobs:
+# Four jobs, ordered by cost — the cheap layers answer first, so a broken
+# reducer or a drawer that drops an edit fails in under a minute instead of
+# after a browser suite:
+#   unit       — Vitest: the pure model in `lib/`, plus the component layer
+#                (React Testing Library + user-event in jsdom). No browser.
 #   smoke      — the legacy 31-check deploy gate, driving the frozen vanilla app
 #   behaviour  — the GATE: the behaviour suite against the React app, built from
 #                source and enforced against the coverage ledger
@@ -29,6 +33,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  unit:
+    name: Model and component tests (Vitest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Both layers: `lib/` in node, components in jsdom. No browser and no
+      # build, so this is the fastest signal in the pipeline.
+      - name: Model and component tests
+        run: npm run lib:test
+
   smoke:
     name: Smoke test in a real browser
     runs-on: ubuntu-latest
@@ -83,13 +106,6 @@ jobs:
       # fails the run. Exit code is 0 only when everything ran and passed.
       - name: Behaviour suite
         run: npm run behaviour
-
-      # TEMPORARY diagnostic: the drawer close path fails only on CI. This prints
-      # the write order relative to the close event so the difference is visible
-      # instead of inferred. Remove once the failure is understood.
-      - name: Diagnose the drawer close path
-        if: always()
-        run: node tests/.scratch/diagnose-drawer.mjs || true
 
       - name: Upload the report and any failure screenshots
         if: always()
