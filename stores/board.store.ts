@@ -27,27 +27,24 @@
  */
 
 import { create } from "zustand";
-import type { Board, BoardIndex, StorageLike } from "@/lib/types";
-import {
-  BOARD_INDEX_KEY,
-  BOARD_KEY_PREFIX,
-  BOARD_STORAGE_KEY,
-  CORRUPT_STORAGE_KEY,
-  INDEX_VERSION,
-} from "@/lib/types";
+import type { Board, StorageLike } from "@/lib/types";
+import { INDEX_VERSION } from "@/lib/types";
 import { pushToast } from "@/stores/toast.store";
 import { useViewStore } from "@/stores/view.store";
-import { asStorageLike, browserStorage } from "@/lib/local-storage";
-import { blankBoard, seedBoard, uid, validateBoard } from "@/lib/board";
+import { asStorageLike } from "@/lib/local-storage";
+import { blankBoard } from "@/lib/board";
+import { boardKey, loadBoardAt, quarantineKeyFor } from "@/lib/storage";
 import {
-  boardKey,
-  listBoardIds,
-  loadBoardAt,
-  loadIndex,
-  quarantineKeyFor,
-  saveBoardAt,
-  saveIndex,
-} from "@/lib/storage";
+  addBoard,
+  appStorage,
+  inMemorySample,
+  persist,
+  readOrRebuildIndex,
+  resolveBoot,
+  saveIndexSafely,
+  summarizeBoards,
+  type BootNotice,
+} from "@/stores/board-boot";
 
 /** Where the current document came from — reported by the settings drawer. */
 export type BoardOrigin = "sample" | "storage" | "import" | "new" | null;
@@ -159,13 +156,17 @@ export const useBoardStore = create<BoardState>()((set, get) => ({
       get().refreshBoards();
       return;
     }
-    // "sample": a fresh sample document was written by `createBoard`, which
-    // stamped the lamp — so this only has to adopt it
+    // "sample": a fresh sample document was written by `createBoard` on the
+    // read-only boot path, which reports the write's stamp back rather than
+    // stamping the lamp itself — so apply it here.
     set({
       board: outcome.board,
       activeId: outcome.activeId,
       origin: "sample",
       bootNotice: outcome.notice,
+      ...(outcome.stamp
+        ? { lamp: { state: "saved", detail: `last write ${outcome.stamp}` }, lastWrite: outcome.stamp }
+        : {}),
     });
     get().refreshBoards();
   },
@@ -245,7 +246,17 @@ export const useBoardStore = create<BoardState>()((set, get) => ({
     const storage = appStorage();
     if (!storage) return;
     const board = blankBoard();
-    addBoard(storage, set, board, "new", `NEW BOARD CREATED — ${board.name}`);
+    addBoard(
+      storage,
+      set,
+      () => {
+        useViewStore.getState().resetForDocumentChange();
+        get().refreshBoards();
+      },
+      board,
+      "new",
+      `NEW BOARD CREATED — ${board.name}`
+    );
   },
 
   /**
@@ -274,16 +285,21 @@ export const useBoardStore = create<BoardState>()((set, get) => ({
     saveIndexSafely(storage, { version: INDEX_VERSION, activeId, ids });
 
     if (!ids.length) {
-      // the last board is gone: the app still needs one to open
-      const created = createSample(storage, null);
-      set({
-        board: created.board,
-        activeId: created.activeId,
-        origin: "sample",
-        lamp: { state: "ready", detail: "" },
-        bootNotice: null,
-      });
-      useViewStore.getState().resetForDocumentChange();
+      // the last board is gone: the app still needs one to open. Storage is now
+      // empty of boards, so a fresh boot is exactly the "nothing saved" path —
+      // resolved through `resolveBoot` rather than a second creation path, so
+      // the sample is written the same way it is on a first visit.
+      const outcome = resolveBoot(storage);
+      if (outcome.kind === "sample" || outcome.kind === "board") {
+        set({
+          board: outcome.board,
+          activeId: outcome.activeId,
+          origin: "sample",
+          lamp: { state: "ready", detail: "" },
+          bootNotice: null,
+        });
+        useViewStore.getState().resetForDocumentChange();
+      }
     } else if (get().activeId === id && activeId) {
       get().openBoard(activeId);
     }
@@ -293,376 +309,3 @@ export const useBoardStore = create<BoardState>()((set, get) => ({
 
   clearBootNotice: () => set({ bootNotice: null }),
 }));
-
-/** Storage, or null when the browser refuses it — every board action's guard. */
-function appStorage(): StorageLike | null {
-  return browserStorage();
-}
-
-/**
- * Create a board from a document the caller brought, write it, and open it.
- *
- * Document first, then the index: if the document write throws, the index is
- * left alone and nothing lists a board that does not exist — the reverse order
- * lists a phantom.
- */
-function addBoard(
-  storage: StorageLike,
-  set: (partial: Partial<BoardState>) => void,
-  board: Board,
-  origin: BoardOrigin,
-  notice: string
-): void {
-  const id = createBoard(storage, board);
-  if (!id) return;
-  set({
-    board,
-    activeId: id,
-    origin,
-    lamp: { state: "saved", detail: "written to storage" },
-    bootNotice: null,
-  });
-  useViewStore.getState().resetForDocumentChange();
-  useBoardStore.getState().refreshBoards();
-  pushToast("ok", notice);
-}
-
-/**
- * Write one new board's document and register it in the index.
- *
- * Returns the new id, or null when the write failed (reported on the lamp).
- * Used by every creation path, including the boot fallbacks, so a board is
- * always created the same way — and it records the write's truth on the lamp,
- * because it is the thing that wrote: a caller that then had to remember to
- * stamp the lamp would eventually not.
- */
-function createBoard(storage: StorageLike, board: Board): string | null {
-  const id = uid("b");
-  const index = readOrRebuildIndex(storage);
-  try {
-    saveBoardAt(storage, boardKey(id), board);
-    const stamp = new Date().toTimeString().slice(0, 8);
-    useBoardStore.setState({ lamp: { state: "saved", detail: `last write ${stamp}` }, lastWrite: stamp });
-  } catch (error) {
-    reportWriteFailure(error);
-    return null;
-  }
-  saveIndexSafely(storage, { version: INDEX_VERSION, activeId: id, ids: [...index.ids, id] });
-  return id;
-}
-/**
- * What boot decided, as data rather than as a series of `set` calls.
- *
- * Boot is the one code path that can destroy a user's board, so it is written
- * as a pure function of storage: `resolveBoot` reads and only reads, and the
- * caller applies the outcome in one place. A helper that mutated the store
- * halfway through — as an earlier draft of this file did — makes the failure
- * branches impossible to test and easy to get wrong.
- */
-type BootOutcome =
-  | {
-      kind: "board";
-      board: Board;
-      activeId: string;
-      origin: BoardOrigin;
-      lamp: Lamp;
-      notice: BootNotice;
-      /** The document needed repairs, so boot writes it back. */
-      repaired: boolean;
-    }
-  | { kind: "sample"; board: Board; activeId: string; notice: BootNotice }
-  | { kind: "unavailable"; reason: string };
-
-type BootNotice = { kind: "info" | "warn" | "error" | "ok"; text: string } | null;
-
-const SAMPLE_NOTICE: BootNotice = {
-  kind: "info",
-  text: "SAMPLE BOARD LOADED — EDIT IT OR DELETE THE CARDS",
-};
-
-/** The sample, held in memory because storage itself is unavailable. */
-function inMemorySample(reason: string): Partial<BoardState> {
-  return {
-    board: seedBoard(),
-    activeId: null,
-    origin: "sample",
-    lamp: { state: "error", detail: reason },
-    bootNotice: { kind: "error", text: `STORAGE UNAVAILABLE (${reason}) — WORK IS IN MEMORY ONLY` },
-  };
-}
-
-/**
- * Decide what the app should open, writing only what is safe to write.
- *
- * The invariant this function exists to hold: **a board whose payload could not
- * be read is never given another board's id, and its key is never written.**
- * Every corrupt path below either leaves the key alone or creates a new board
- * under a new key.
- */
-function resolveBoot(storage: StorageLike): BootOutcome {
-  // 1. the index, migrating or rebuilding when there is none to read
-  const storedIndex = loadIndex(storage);
-  let index: BoardIndex;
-  let notice: BootNotice = null;
-
-  if (storedIndex.kind === "ok") {
-    index = storedIndex.index;
-  } else if (storedIndex.kind === "unavailable") {
-    return { kind: "unavailable", reason: storedIndex.reason };
-  } else if (storedIndex.kind === "corrupt") {
-    // the index is a convenience over the keys: rebuild rather than refuse
-    const ids = listBoardIds(storage);
-    index = { version: INDEX_VERSION, activeId: ids[0] ?? null, ids };
-    saveIndexSafely(storage, index);
-    if (ids.length) {
-      notice = {
-        kind: "warn",
-        text: `BOARD LIST WAS UNREADABLE (${storedIndex.reason}) — REBUILT FROM ${ids.length} SAVED BOARD(S)`,
-      };
-    }
-  } else {
-    const migrated = migrateLegacy(storage);
-    if (migrated.kind === "unavailable") return { kind: "unavailable", reason: migrated.reason };
-    index = migrated.index;
-    notice = migrated.notice;
-  }
-
-  // 2. reconcile the index with the keys. A document with no index entry is
-  //    adopted (its index write failed); an entry with no document is dropped
-  //    (its document write failed). Either way the loser of a half-write is
-  //    recovered rather than leaked.
-  const present = listBoardIds(storage);
-  const ids = [...index.ids.filter((id) => present.includes(id)), ...present.filter((id) => !index.ids.includes(id))];
-  const activeId = index.activeId && ids.includes(index.activeId) ? index.activeId : ids[0] ?? null;
-  const reconciled: BoardIndex = { version: INDEX_VERSION, activeId, ids };
-  if (ids.length !== index.ids.length || ids.some((id, i) => id !== index.ids[i]) || activeId !== index.activeId) {
-    saveIndexSafely(storage, reconciled);
-  }
-
-  // 3. a board is always open: nothing saved means the sample, in a new board
-  if (!activeId) {
-    return createSample(storage, notice ?? SAMPLE_NOTICE);
-  }
-
-  // 4. load it — and never write this key when the payload cannot be read
-  const key = boardKey(activeId);
-  const stored = loadBoardAt(storage, key);
-
-  if (stored.kind === "unavailable") {
-    return { kind: "unavailable", reason: stored.reason };
-  }
-  if (stored.kind === "empty") {
-    // the key vanished between the scan and here: drop it and open a sample
-    return createSample(storage, {
-      kind: "info",
-      text: "THE OPEN BOARD'S DATA WAS MISSING — A SAMPLE BOARD IS OPEN",
-    });
-  }
-  if (stored.kind === "corrupt") {
-    // copy, never replace: the board stays at its key, keeps its index entry,
-    // and stays listed in the drawer so the user can see what happened
-    try {
-      storage.setItem(quarantineKeyFor(key), stored.raw);
-    } catch {
-      /* a copy is a courtesy, not a guarantee */
-    }
-    return createSample(storage, {
-      kind: "error",
-      text: `BOARD COULD NOT BE READ (${stored.reason}) — IT IS UNTOUCHED AT "${key}"; A SAMPLE BOARD IS OPEN`,
-    });
-  }
-  if (stored.repairs.length) {
-    // repaired, not quarantined: a board missing ticket numbers is recoverable
-    return {
-      kind: "board",
-      board: stored.board,
-      activeId,
-      origin: "storage",
-      lamp: { state: "saved", detail: "loaded from storage" },
-      notice: { kind: "warn", text: `STORED BOARD REPAIRED — ${stored.repairs.join("; ")}` },
-      repaired: true,
-    };
-  }
-  return {
-    kind: "board",
-    board: stored.board,
-    activeId,
-    origin: "storage",
-    lamp: { state: "saved", detail: "loaded from storage" },
-    notice,
-    repaired: false,
-  };
-}
-
-/**
- * The legacy single-key board, read once and migrated into the collection.
- *
- * The old key is **never written** — not cleared, not rewritten. An older build
- * still finds its board exactly where it left it, so a rollback is survivable,
- * and that is why this is a copy rather than a move.
- */
-function migrateLegacy(
-  storage: StorageLike
-): { kind: "ok"; index: BoardIndex; notice: BootNotice } | { kind: "unavailable"; reason: string } {
-  let raw: string | null;
-  try {
-    raw = storage.getItem(BOARD_STORAGE_KEY);
-  } catch (error) {
-    return { kind: "unavailable", reason: error instanceof Error ? error.message : String(error) };
-  }
-
-  if (raw === null || raw === "") {
-    return { kind: "ok", index: { version: INDEX_VERSION, activeId: null, ids: [] }, notice: null };
-  }
-
-  const result = parseBoardText(raw);
-  if (result.ok) {
-    const id = uid("b");
-    try {
-      saveBoardAt(storage, boardKey(id), result.board);
-      const index: BoardIndex = { version: INDEX_VERSION, activeId: id, ids: [id] };
-      saveIndex(storage, index);
-      // no toast: the board is intact, and a notice on the first load after a
-      // deploy would read as a warning about nothing
-      return { kind: "ok", index, notice: null };
-    } catch (error) {
-      return { kind: "unavailable", reason: error instanceof Error ? error.message : String(error) };
-    }
-  }
-
-  // unreadable: keep the copy at the old copy key — the same string the vanilla
-  // app used, so the existing contract holds on both targets — and open the
-  // sample under a NEW id, leaving the failed payload exactly where it was
-  try {
-    storage.setItem(CORRUPT_STORAGE_KEY, raw);
-  } catch {
-    /* a copy is a courtesy */
-  }
-  const created = createSample(storage, {
-    kind: "error",
-    text: `STORED BOARD WAS UNREADABLE (${result.reason}) — SAMPLE BOARD LOADED; THE OLD PAYLOAD IS PRESERVED UNDER "${CORRUPT_STORAGE_KEY}"`,
-  });
-  return {
-    kind: "ok",
-    index: { version: INDEX_VERSION, activeId: created.activeId, ids: [created.activeId] },
-    notice: created.notice,
-  };
-}
-
-/** Validate a raw payload the way the board codec does, without a storage read. */
-function parseBoardText(raw: string): { ok: true; board: Board } | { ok: false; reason: string } {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (error) {
-    return { ok: false, reason: `not valid JSON (${error instanceof Error ? error.message : String(error)})` };
-  }
-  const result = validateBoard(parsed);
-  if (!result.ok) return { ok: false, reason: result.error };
-  return { ok: true, board: result.board };
-}
-
-/**
- * Open the shipped sample in a new board.
- *
- * The one path every boot fallback shares, so the failure modes differ only in
- * what they say, never in what they do.
- */
-function createSample(
-  storage: StorageLike,
-  notice: BootNotice
-): { kind: "sample"; board: Board; activeId: string; notice: BootNotice } {
-  const board = seedBoard();
-  const id = createBoard(storage, board);
-  // a board is always open, so a failed write still yields the in-memory sample
-  return { kind: "sample", board, activeId: id ?? uid("b"), notice };
-}
-
-/** Write the index, treating a failure as the convenience it is. */
-function saveIndexSafely(storage: StorageLike, index: BoardIndex): void {
-  try {
-    saveIndex(storage, index);
-  } catch {
-    /* the keys are the truth; the index is rebuilt on the next boot */
-  }
-}
-
-/** The index, or one rebuilt from the keys if it cannot be read. */
-function readOrRebuildIndex(storage: StorageLike): BoardIndex {
-  const stored = loadIndex(storage);
-  if (stored.kind === "ok") return stored.index;
-  const ids = listBoardIds(storage);
-  const index: BoardIndex = { version: INDEX_VERSION, activeId: ids[0] ?? null, ids };
-  if (stored.kind === "corrupt") saveIndexSafely(storage, index);
-  return index;
-}
-
-/** Read every board into its drawer row. An unreadable board is listed, not dropped. */
-function summarizeBoards(storage: StorageLike): BoardSummary[] {
-  const index = readOrRebuildIndex(storage);
-  return index.ids.map((id) => {
-    const stored = loadBoardAt(storage, boardKey(id));
-    if (stored.kind === "ok") {
-      return {
-        id,
-        name: stored.board.name,
-        cards: Object.keys(stored.board.cards).length,
-        updatedAt: null,
-        readable: true,
-        problem: null,
-      };
-    }
-    const problem =
-      stored.kind === "corrupt"
-        ? stored.reason
-        : stored.kind === "unavailable"
-          ? stored.reason
-          : "no data is saved at its key";
-    return { id, name: id, cards: 0, updatedAt: null, readable: false, problem };
-  });
-}
-
-/** Matches the reference's writeErrorStreak (app.js:379-399): toasting once per failure streak. */
-let writeErrorStreak = false;
-
-/** Report a failed write the same way `persist` does, for the creation paths. */
-function reportWriteFailure(error: unknown): void {
-  const message = error instanceof Error ? error.message : String(error);
-  useBoardStore.setState({ lamp: { state: "error", detail: message } });
-  if (!writeErrorStreak) {
-    writeErrorStreak = true;
-    pushToast("error", `STORAGE WRITE FAILED — CHANGES ARE IN MEMORY ONLY (${message})`);
-  }
-}
-
-/**
- * Write the open board's document, and record the write's truth on the lamp.
- *
- * With no board open there is no key to write to, and saying so is better than
- * writing to a key that belongs to some other board.
- */
-function persist(
-  board: Board,
-  activeId: string | null,
-  set: (partial: Partial<BoardState>) => void
-): void {
-  if (!activeId) {
-    set({ lamp: { state: "error", detail: "no board is open" } });
-    if (!writeErrorStreak) {
-      writeErrorStreak = true;
-      pushToast("error", "NO BOARD IS OPEN — CHANGES ARE IN MEMORY ONLY");
-    }
-    return;
-  }
-  try {
-    saveBoardAt(asStorageLike(window.localStorage), boardKey(activeId), board);
-    const stamp = new Date().toTimeString().slice(0, 8);
-    set({ lamp: { state: "saved", detail: `last write ${stamp}` }, lastWrite: stamp });
-    if (writeErrorStreak) {
-      writeErrorStreak = false;
-      pushToast("ok", "STORAGE RECOVERED — THE BOARD IS SAVING AGAIN");
-    }
-  } catch (error) {
-    reportWriteFailure(error);
-  }
-}

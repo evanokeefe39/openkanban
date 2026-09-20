@@ -2,9 +2,9 @@
 
 import type { Board, Column } from "@/lib/types";
 import { useDroppable } from "@dnd-kit/core";
-import { Card, type CardDragSeam } from "./Card";
-import { AddForm } from "./AddForm";
-import { useDragStore } from "./drag.store";
+import { Card, type CardDragSeam } from "@/components/board/Card";
+import { AddForm } from "@/components/board/AddForm";
+import { useDragStore } from "@/stores/drag.store";
 import { useViewStore } from "@/stores/view.store";
 import { matchesFilter } from "@/lib/format";
 

@@ -35,8 +35,8 @@ import {
 } from "@dnd-kit/core";
 import { useBoardStore } from "@/stores/board.store";
 import { useViewStore } from "@/stores/view.store";
-import { attemptMove, moveSelectionTo } from "@/app/board/move-gate";
-import { useDragStore, type DragTarget } from "@/app/board/drag.store";
+import { attemptMove, moveSelectionTo } from "@/lib/move-gate";
+import { useDragStore, type DragTarget } from "@/stores/drag.store";
 
 /** Resolve where a drop at (x, y) lands — port of `dropTargetFrom`. */
 function resolveDropTarget(x: number, y: number, grabbedId: string | null): DragTarget | null {

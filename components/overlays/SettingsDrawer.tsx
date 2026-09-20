@@ -7,7 +7,7 @@ import type { Column, ViewOptions } from "@/lib/types";
 import { titleCaseLabel } from "@/lib/format";
 import { uid } from "@/lib/board";
 import { pushToast } from "@/stores/toast.store";
-import { commitBoardName } from "./board-name";
+import { commitBoardName } from "@/lib/board-name";
 
 /** App-level view-toggle metadata, as in the reference `app.js`. */
 const VIEW_TOGGLES: Array<{ key: keyof ViewOptions; label: string; title: string }> = [

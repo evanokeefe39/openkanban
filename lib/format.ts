@@ -19,6 +19,16 @@ export function titleCaseLabel(name: string): string {
   return name.toUpperCase();
 }
 
+/**
+ * The titles of `ids`, for a message that reads as a path: `A → B → C`.
+ *
+ * Falls back to the id when a card cannot be found, so a cycle message names
+ * every step even if one of them is missing from the board.
+ */
+export function cardNames(board: Board, ids: string[]): string[] {
+  return ids.map((id) => board.cards[id]?.title ?? id);
+}
+
 export function priorityLabel(value: number): string {
   const match = PRIORITIES.find((p) => p.value === value);
   return (match ?? PRIORITIES[0]).label;

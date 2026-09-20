@@ -143,6 +143,30 @@ COMPACT density all five fit.
 **The toolbar is ~13px off true centre.** The button cluster is wider than the brand cluster; centring
 is of the search field, which is what was asked for.
 
+**The drawer's close-flush does not race the `close` event — measured, not argued.** B7 and B14 fail on
+CI and pass locally, and a plausible explanation was that the checks read storage in the window between
+the dialog reporting closed and the flush writing. That explanation is **wrong**, and it was disproved in
+a real browser rather than reasoned about:
+
+| Sample | Stored title |
+| --- | --- |
+| after typing into `#card-title` | `Design tokens + app shell` (nothing written) |
+| immediately before Escape | `Design tokens + app shell` (still nothing) |
+| the instant `open === false` | `Flushed by escape` — **already written** |
+| one animation frame later | `Flushed by escape` |
+
+The sequence is `onClose` → `flushFields()` → `commit()` → `persist()` → `localStorage.setItem`, all in
+one synchronous task, and `page.waitForFunction` polls on animation frames — so it cannot observe
+`open === false` before that task has finished. The check cannot lose the race it was suspected of
+losing. Typing alone writes nothing (the first two rows), which is correct: the drawer holds title,
+notes and due as drafts and commits them on blur or close.
+
+The real cause of the CI-only failure is therefore still **open**, and this rules out the most attractive
+explanation for it. What is ruled out matters as much as what is not: the drawer's persistence logic is
+sound, which the component tests in `app/board/CardDrawer.test.tsx` independently confirm by asserting
+the stored document. The remaining candidate is environmental — a CI-runner difference in how the
+synthetic `Escape` reaches a native `<dialog>`.
+
 ## Open — found while building the port's behaviour suite
 
 **A drawer control's click is silently lost when a text edit is pending.** Found 2026-09-18, reproduced

@@ -12,7 +12,7 @@ import {
 } from "@/lib/graph";
 import { PRIORITIES, priorityLabel } from "@/lib/format";
 import { daysUntil } from "@/lib/format";
-import { useDragStore } from "./drag.store";
+import { useDragStore } from "@/stores/drag.store";
 import { useViewStore } from "@/stores/view.store";
 
 /**

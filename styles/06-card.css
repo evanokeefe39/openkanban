@@ -1,0 +1,323 @@
+/* ============================================================
+   Card
+   ============================================================ */
+.card {
+  position: relative;
+  background: var(--card-bg);
+  border: 1px solid var(--line);
+  transition: background-color 120ms var(--ease-out), border-color 120ms var(--ease-out);
+}
+.card::before {
+  content: '';
+  position: absolute;
+  /* under the dependency canes (z-index 2) but over the card fill: when a card is being read for
+     its dependencies the border is the message, so the rail gives up the top edge rather than
+     painting across the cane */
+  z-index: 1;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: var(--prio-color, transparent);
+}
+.card[data-prio='1'] {
+  --prio-color: var(--color-priority-p0);
+}
+.card[data-prio='2'] {
+  --prio-color: var(--color-priority-p1);
+}
+.card[data-prio='3'] {
+  --prio-color: var(--color-priority-p2);
+}
+.card:hover {
+  /* the lift is the whole of the general hover: no border change, so the board stays still as the
+     pointer crosses it and a border only ever means a dependency */
+  background: var(--card-bg-hover);
+}
+.card-main {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 6px;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  font-size: var(--density-title);
+  color: inherit;
+  background: transparent;
+  border: 0;
+  padding: var(--density-card-pad);
+  cursor: grab;
+}
+.card-main:active {
+  cursor: grabbing;
+}
+.card-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-weight: 500;
+  line-height: 1.35;
+  word-break: break-word;
+}
+.card[data-blocked='1'] .card-title {
+  color: var(--color-foreground-secondary);
+}
+.card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--density-meta-gap);
+  margin-top: var(--density-meta-top);
+  grid-column: 1 / -1;
+  align-self: start;
+}
+.card-meta:empty {
+  display: none;
+}
+/* ticket number: assigned once, never reused, and the handle people say out loud.
+   Secondary rather than muted: at 10px the muted token measured 4.3:1 on the old neutral card
+   and 3.6:1 on the warm one, both under AA for small text. */
+.card-num {
+  font-size: 10px;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  color: var(--color-foreground-secondary);
+  font-variant-numeric: tabular-nums;
+}
+html[data-show-numbers='0'] .card-num {
+  display: none;
+}
+html[data-show-numbers='0'] .card-main {
+  column-gap: 0;
+}
+/* the wiring in numbers — only while D is held, and only on the hovered card's chain, so this
+   reads as one card's wiring rather than a board-wide mode. The row sits on its own dark strip so
+   the amber/indigo text is never read against the card fill. */
+.card-refs {
+  display: none;
+  grid-column: 1 / -1;
+  align-self: start;
+  gap: 10px;
+  margin-top: 4px;
+  padding: 1px 4px;
+  background: var(--ring-backing);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+html[data-deps-mode='1'] .card[data-chain] .card-refs {
+  display: flex;
+}
+.ref-up {
+  color: var(--ring-amber);
+}
+.ref-down {
+  color: var(--ring-indigo);
+}
+.card.dragging {
+  opacity: 0.4;
+}
+
+/* drop indicators — declared after chain rings so they win during a drag */
+.card.drop-before {
+  box-shadow: inset 0 2px 0 0 var(--ivory);
+}
+.card.drop-after {
+  box-shadow: inset 0 -2px 0 0 var(--ivory);
+}
+
+/* ---------------------------------------------------------------------------
+   Dependency highlight — the only place hovering a card does more than lift it.
+
+   The general hover is just the card's own background lifting (no border of any
+   kind: a ring on every hover made the board look like it was flickering as the
+   pointer crossed it). The border is reserved for dependencies, where it carries
+   meaning: a red candy cane on what the card blocks, and a solid white line on
+   what blocks it. Static, so nothing on the board moves while it is read.
+
+   A card is often BOTH a blocker and blocked, so the two need two separate
+   canvases — one element cannot carry two rings:
+     .card::after          the candy cane. Red, where the card blocks something.
+     .card-cane (a child)  the solid line. White, where the card is blocked.
+   `::before` is the priority rail and is not reusable here.
+
+   The cane is a repeating diagonal gradient masked down to a 2px ring;
+   `border-image` cannot be clipped that way, so the mask does the work.
+--------------------------------------------------------------------------- */
+.card[data-chain]::after,
+.card-cane {
+  position: absolute;
+  /* above the priority rail (z-index 1) so a dependency cane crosses the top edge rather than being
+     cut by it: when a card is being read for its dependencies the border is the message */
+  z-index: 2;
+  inset: 0;
+  content: '';
+  pointer-events: none;
+  padding: 2px;
+  -webkit-mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+}
+
+/* blocks — the static red candy cane, on the outer edge */
+.card[data-chain='blocks']::after,
+.card[data-chain='both']::after {
+  background-image: repeating-linear-gradient(
+    45deg,
+    var(--cane-blocks-a) 0 6px,
+    var(--cane-blocks-b) 6px 12px
+  );
+}
+
+/* blocked — a solid white line, inset one step so it reads separately from the cane */
+.card[data-chain='blocked'] .card-cane,
+.card[data-chain='both'] .card-cane {
+  inset: 4px;
+  background: var(--cane-blocked-solid);
+}
+/* a card that is only blocked has no cane, so its white line takes the outer edge */
+.card[data-chain='blocked']::after {
+  background: var(--cane-blocked-solid);
+}
+.card[data-chain='blocked'] .card-cane {
+  display: none;
+}
+
+/* A row in the key cluster: same shape as the dependency hint, so the right end of the row reads
+   as one reference block rather than several unrelated items. */
+.row-key {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--color-foreground-secondary);
+  white-space: nowrap;
+}
+/* the hint points at the checkbox now, so it explains itself without a mode to enter */
+
+/* Bulk operations. An overlay, not a grid row: `.app`'s template is sized for exactly three
+   children, so a fourth in flow would take the board's `1fr` track and drop the board into an
+   implicit `auto` row — the columns would stop reaching the bottom the moment the bar appeared. */
+.selection-bar {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--line-strong);
+  background: var(--ink-bg);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-foreground-secondary);
+  white-space: nowrap;
+}
+.selection-bar[hidden] {
+  display: none;
+}
+.selection-count {
+  color: var(--ivory);
+}
+.selection-hint {
+  color: var(--color-foreground-muted);
+}
+.selection-targets {
+  display: flex;
+  gap: 6px;
+}
+/* A ticked card. The marker is a box-shadow ring, not a border or a fill: the priority tint owns
+   `background`/`border-color` and the dependency canes own the edges, so a tick drawn in either
+   would be erased the moment those states applied. Nothing else on a card uses box-shadow.
+   The drop indicators also use box-shadow, and during a group drag the card being dropped onto is
+   usually ticked — so the two are combined below rather than one replacing the other. */
+.card[data-picked='1'] {
+  box-shadow: 0 0 0 2px var(--ivory);
+}
+/* a ticked card that is also a drop target keeps both marks: the ring says what is picked, the
+   inset line says where it will land, and neither may erase the other. Declared after both so it
+   wins on a ticked drop target. */
+.card[data-picked='1'].drop-before {
+  box-shadow: 0 0 0 2px var(--ivory), inset 0 2px 0 0 var(--ivory);
+}
+.card[data-picked='1'].drop-after {
+  box-shadow: 0 0 0 2px var(--ivory), inset 0 -2px 0 0 var(--ivory);
+}
+/* The tick is the read-out of the Ctrl mode, not a permanent control: it appears when the modifier
+   is held and disappears with it, so the board is uncluttered the rest of the time and there is no
+   mode to leave behind. */
+.card-tick {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 4;
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: var(--ivory);
+  cursor: pointer;
+  /* the tick has to read over any card fill, including the palest priority tint */
+  outline: 1px solid var(--ring-backing);
+  outline-offset: 1px;
+  display: none;
+}
+html[data-select-mode='1'] .card-tick {
+  display: block;
+}
+/* while Ctrl is held the whole card is the tick target, so the pointer says so */
+html[data-select-mode='1'] .card-main {
+  cursor: copy;
+}
+.btn-small {
+  padding: 2px 6px;
+  font-size: 10px;
+}
+
+/* the hint doubles as the mode indicator: the label the key is named after */
+.deps-indicator {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  /* secondary, not muted: this is the only place the overlay's hotkey is taught, and muted grey on
+     the page background measured 4.17:1 at 10px — under AA for the app's headline feature */
+  color: var(--color-foreground-secondary);
+  white-space: nowrap;
+}
+/* The key is drawn as a keycap, the way editors draw a shortcut in a tooltip: a bordered cap with a
+   lit top edge and a darker foot, sitting on the baseline of the words around it. "hold D" as plain
+   text reads as a word — and the hotkey is the app's headline feature, so it has to look like a key
+   at a glance rather than be inferred from the sentence. The cap is the inset surface plus a 2px
+   foot, which is what sells it as something to press. */
+.kbd {
+  display: inline-block;
+  min-width: 16px;
+  margin: 0 4px;
+  padding: 2px 5px 1px;
+  border: 1px solid var(--line-strong);
+  border-top-color: rgba(255, 255, 255, 0.28);
+  border-bottom: 2px solid rgba(0, 0, 0, 0.55);
+  background: var(--inset-bg);
+  color: var(--ivory);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+.deps-on {
+  display: none;
+}
+html[data-deps-mode='1'] .deps-keys {
+  display: none;
+}
+html[data-deps-mode='1'] .deps-indicator {
+  border-color: rgba(245, 158, 11, 0.6);
+  color: var(--color-accent);
+}
+html[data-deps-mode='1'] .deps-on {
+  display: inline;
+}

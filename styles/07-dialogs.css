@@ -1,0 +1,315 @@
+/* ============================================================
+   Dialogs
+   ============================================================ */
+dialog {
+  color: var(--color-foreground);
+  font-family: var(--font-mono);
+  background: var(--ink-bg);
+  border: 1px solid var(--line-strong);
+  padding: 0;
+  /* The reference relies on the browser's default `dialog { margin: auto }` to centre a modal.
+     Tailwind's preflight resets `* { margin: 0 }`, which pins it to the top-left instead. State it
+     explicitly so the modal is centred whether or not a reset is loaded. `.drawer` overrides this
+     below (`margin: 0 0 0 auto`) — that is deliberate; the sidebar is not a centred modal. */
+  margin: auto;
+}
+dialog::backdrop {
+  background: rgba(0, 0, 0, 0.62);
+}
+
+.drawer {
+  margin: 0 0 0 auto;
+  width: min(420px, 100vw);
+  max-width: 100vw;
+  height: 100dvh;
+  max-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  border-top: 0;
+  border-bottom: 0;
+  border-right: 0;
+  /* the sidebar is the page's own material, per the user's call — its edge is the 1px rule and the
+     dimmed backdrop behind it, not a different fill. Modals keep the ink surface: they appear over
+     the board rather than beside it. */
+  background: var(--color-background);
+  animation: drawer-in 180ms var(--ease-out);
+}
+.drawer:not([open]) {
+  display: none;
+}
+@keyframes drawer-in {
+  from {
+    transform: translateX(10px);
+    opacity: 0.4;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+.drawer-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  background: var(--color-background-subtle);
+}
+.drawer-kicker {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--color-foreground-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.drawer-head .btn {
+  margin-left: auto;
+}
+.drawer-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 10px;
+}
+.drawer-foot {
+  border-top: 1px solid var(--line);
+  padding: 8px 10px;
+  background: var(--color-background-subtle);
+}
+
+.field {
+  display: block;
+  margin-bottom: 14px;
+}
+/* Sections in the drawer run into each other without a rule: the labels are the same size and the
+   same colour, so the eye has nothing to group by. The divider names those boundaries — drawn as a
+   top rule with breathing room above the section's own label rather than a box around it, so it
+   reads as a division in one column rather than a set of cards. */
+.field-divider {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.field [data-field-actions] {
+  flex-wrap: wrap;
+}
+.field-label {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-foreground-secondary);
+  margin-bottom: 5px;
+}
+.row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.row .input {
+  flex: 1 1 auto;
+}
+.hint {
+  font-size: 10px;
+  line-height: 1.55;
+  color: var(--color-foreground-muted);
+  margin: 6px 0 0;
+}
+.meta-line {
+  font-size: 10px;
+  color: var(--color-foreground-muted);
+  font-variant-numeric: tabular-nums;
+  margin: 4px 0 0;
+}
+
+.picker {
+  border: 1px solid var(--line);
+  border-top: 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.picker:empty {
+  display: none;
+}
+.picker button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--color-foreground-secondary);
+  background: var(--inset-bg);
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 6px 7px;
+  cursor: pointer;
+}
+.picker button:last-child {
+  border-bottom: 0;
+}
+.picker button:hover:not(:disabled) {
+  background: var(--lift);
+  color: var(--color-foreground);
+}
+.picker button:disabled {
+  color: var(--color-foreground-muted);
+  cursor: default;
+}
+.picker .picker-col {
+  color: var(--color-foreground-muted);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.picker .picker-note {
+  padding: 6px 7px;
+  font-size: 10px;
+  color: var(--color-foreground-muted);
+  background: var(--inset-bg);
+}
+
+.modal {
+  width: min(460px, 92vw);
+  padding: 14px;
+  animation: modal-in 160ms var(--ease-out);
+}
+.modal:not([open]) {
+  display: none;
+}
+@keyframes modal-in {
+  from {
+    transform: scale(0.97);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+.modal-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.modal-text {
+  font-size: 12px;
+  color: var(--color-foreground-secondary);
+  line-height: 1.55;
+  margin-bottom: 14px;
+}
+.modal-text ul {
+  margin: 6px 0 0;
+  padding-left: 16px;
+}
+.modal-text li {
+  margin-bottom: 2px;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+/* settings column rows */
+.col-rows {
+  border: 1px solid var(--line);
+  margin-bottom: 8px;
+}
+.col-rows:empty {
+  display: none;
+}
+.col-row {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border-bottom: 1px solid var(--line);
+  background: var(--inset-bg);
+}
+.col-row:last-child {
+  border-bottom: 0;
+}
+.col-row .input {
+  padding: 4px 6px;
+  font-size: 11px;
+}
+
+/* boards drawer rows — `.col-row` is the drawer list-row primitive, reused
+   rather than paralleled by a second class. No colour, no radius, no shadow:
+   the active board is marked by weight, not by a hue. */
+/* the list scrolls inside a capped box so a long collection cannot grow the
+   sidebar past the viewport and take the page with it. The cap is a share of the
+   drawer's own height, not a pixel count, so it holds at any viewport. */
+#boards-list {
+  max-height: 45dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+/* four tracks for the four children: the identity block (name over key) is the
+   one flexible track, so the key ellipsises inside it; the meta cell and the two
+   buttons keep their natural size. The key sits on its own line under the name
+   because it is a long uniform value — beside the name it either crowded the row
+   or collapsed to nothing, which the earlier measurement showed as width 0. */
+#boards-list .col-row {
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+}
+.board-ident {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.board-key {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-foreground-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+#boards-list .board-name-cell,
+#boards-list .board-meta-cell {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.col-row[data-active="1"] .board-name-cell {
+  font-weight: 700;
+}
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.check input {
+  /* the neutral white, not the amber focus accent: the accent means warning in this palette, and a
+     checked box is a state rather than an alarm */
+  accent-color: var(--color-border-focus);
+  margin: 0;
+  cursor: pointer;
+}
+
+/* inline add-card form */
+.add-form {
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.add-form .hint {
+  margin: 0;
+}

@@ -2,7 +2,7 @@
 
 import { useBoardStore } from "@/stores/board.store";
 import { useViewStore } from "@/stores/view.store";
-import { moveSelectionTo } from "@/app/board/move-gate";
+import { moveSelectionTo } from "@/lib/move-gate";
 
 /**
  * The bulk-operations overlay, shown only while cards are ticked. The targets

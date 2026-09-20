@@ -7,19 +7,19 @@ import { BOARD_INDEX_KEY, BOARD_KEY_PREFIX, CORRUPT_SUFFIX } from "@/lib/types";
 import { boardKey, serializeBoard } from "@/lib/storage";
 import { blockedChain, closure } from "@/lib/graph";
 import { pushToast } from "@/stores/toast.store";
-import { requestImport } from "./transfer";
-import { TopBar } from "./TopBar";
-import { StatusRow } from "./StatusRow";
-import { FilterPanel } from "./FilterPanel";
-import { SelectionBar } from "./SelectionBar";
-import { Board } from "./Board";
-import { CardDrawer } from "./CardDrawer";
-import { SettingsDrawer } from "./SettingsDrawer";
-import { BoardsDrawer } from "./BoardsDrawer";
-import { ConfirmDialog } from "./ConfirmDialog";
-import { ResetDialog } from "./ResetDialog";
-import { ToastHost } from "./ToastHost";
-import { DragLayer } from "@/app/board/DragLayer";
+import { requestImport } from "@/lib/transfer";
+import { TopBar } from "@/components/chrome/TopBar";
+import { StatusRow } from "@/components/chrome/StatusRow";
+import { FilterPanel } from "@/components/chrome/FilterPanel";
+import { SelectionBar } from "@/components/chrome/SelectionBar";
+import { Board } from "@/components/board/Board";
+import { CardDrawer } from "@/components/overlays/CardDrawer";
+import { SettingsDrawer } from "@/components/overlays/SettingsDrawer";
+import { BoardsDrawer } from "@/components/overlays/BoardsDrawer";
+import { ConfirmDialog } from "@/components/overlays/ConfirmDialog";
+import { ResetDialog } from "@/components/overlays/ResetDialog";
+import { ToastHost } from "@/components/chrome/ToastHost";
+import { DragLayer } from "@/components/board/DragLayer";
 
 /**
  * The shell. Boots both stores once, owns the document-level listeners (the

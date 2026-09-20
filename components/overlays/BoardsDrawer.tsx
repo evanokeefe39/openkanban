@@ -4,8 +4,8 @@ import { useEffect, useRef } from "react";
 import { useBoardStore } from "@/stores/board.store";
 import { useViewStore } from "@/stores/view.store";
 import { boardKey } from "@/lib/storage";
-import { exportBoard } from "./transfer";
-import { DownloadIcon, UploadIcon } from "./icons";
+import { exportBoard } from "@/lib/transfer";
+import { DownloadIcon, UploadIcon } from "@/components/chrome/icons";
 
 /**
  * The boards drawer — every board saved in this browser, one per storage key.

@@ -1,0 +1,147 @@
+/* ============================================================
+   OpenKanban — UNIT-02 derived design tokens
+   Source of truth: ~/repos/ambient-noise-app-v2/src/app/globals.css
+   Identity: brutalist mono instrument panel. Zero radius, hard 1px
+   rules, uppercase tracked labels, borders-only depth, no shadows.
+   ============================================================ */
+
+:root {
+  /* palette — inherited, not invented */
+  --color-background: #0a0608;
+  --color-background-subtle: #120a0c;
+  --color-foreground: #e8e8ed;
+  --color-foreground-secondary: #9ca3af;
+  --color-foreground-muted: #6b7280;
+  /* Focus is the neutral near-white, and NOT the amber accent: amber already means warning in this
+     palette (the deps indicator, the override chip), so an amber focus ring made every focused field
+     read as an error — visible first on the delete-confirmation dialog. Explicitly not --ivory
+     either, which carries a warm cast of its own; a focus ring should be past question neutral.
+     (It was indigo before the navy sweep; that was the blue it started life as, not a decision.) */
+  --color-border-focus: #e8e8ed;
+  --color-vu-green: #22c55e;
+  --color-destructive: #ef4444;
+  --color-accent: #f59e0b;
+  --ivory: #f9ffd0;
+
+  /* priority + due accents — pink / burnt orange / cream from the reference design system,
+     plus the cyan (eq band 6) reserved for "due today" so it never reads as alarm red */
+  --color-priority-p0: #f00e68;
+  --color-priority-p1: #f14f2b;
+  --color-priority-p2: #f9ffd0;
+  --color-due-today: #14b8a6;
+
+  /* derived structure */
+  --line: rgba(255, 255, 255, 0.1);
+  --line-strong: rgba(255, 255, 255, 0.16);
+  /* ink black: the filter control and the pane it opens, the modals, and the toasts. The page, the
+     cards and the sidebar are the other three surfaces — the bar and the columns share the page's
+     own fill, so chrome is drawn by rules rather than by a change of plane. */
+  --ink-bg: #00161c;
+  /* the one hover lift, a translucent white so it reads on the page, on ink and on a card alike.
+     It replaced a navy plane (#1e1e30) that made every button in the app look like a different
+     control depending on which surface it happened to sit on. */
+  --lift: rgba(255, 255, 255, 0.06);
+  /* card surface: warm "coffee bean" against the cool ink of the chrome, per the user's call — the
+     priority tints below mix into this value, so they follow it automatically */
+  --card-bg: #1f1819;
+  /* the hover lift, measured: RGB distance ~12 from the resting card */
+  --card-bg-hover: #261f20;
+  /* recessed planes (inputs, chips, list rows) — warm dark, in the page's family rather than blue */
+  --inset-bg: #0c0909;
+
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* The arrow refs' two hues, read against the dark strip they sit on rather than the card fill:
+     amber for what a card waits on, indigo for what waits on it. */
+  --ring-amber: rgba(245, 158, 11, 0.95);
+  --ring-indigo: rgba(165, 168, 255, 0.95);
+  --ring-backing: rgba(0, 0, 0, 0.5);
+  /* The two dependency directions. Red candy cane marks what this card blocks; a solid white line
+     marks what blocks it. Only the blocking direction is striped — the contrast between a striped
+     edge and a plain one is what tells the two apart at a glance, where two coloured rings of the
+     same construction read as one treatment. */
+  --cane-blocks-a: #ef4444;
+  --cane-blocks-b: #3a1210;
+  --cane-blocked-solid: #f5f0e6;
+
+  --col-width: var(--density-col-width);
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* scrollbars — quiet, structural */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::selection {
+  background: var(--color-border-focus);
+  color: #fff;
+}
+
+/* A text field inverts its own selection. The `::selection` rule above is the native text highlight
+   for the whole document — near-white behind white type. That is fine on a card, but the rename
+   field selects its whole value on focus so a keystroke replaces the old name, and the pairing
+   measured 1.22:1 there: the text was invisible at the moment the user was about to type over it.
+   This restores the highlight to near-black on the focus fill (17.2:1, measured in-browser), reusing
+   the codebase's one inverted-ink value rather than introducing a second near-black. Dropping the
+   highlight is not an option — the field then looks empty and a keystroke would silently discard
+   the old name. */
+input::selection,
+textarea::selection {
+  background: var(--color-border-focus);
+  color: #000;
+}
+
+:focus-visible {
+  outline: 1px solid var(--color-border-focus);
+  outline-offset: 1px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}

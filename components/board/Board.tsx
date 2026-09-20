@@ -1,7 +1,7 @@
 "use client";
 
 import type { Board } from "@/lib/types";
-import { Column } from "./Column";
+import { Column } from "@/components/board/Column";
 import { matchesFilter } from "@/lib/format";
 import { useViewStore } from "@/stores/view.store";
 

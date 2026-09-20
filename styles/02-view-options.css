@@ -1,0 +1,101 @@
+/* ============================================================
+   View options — density scale + card-face visibility.
+   Presentation only: gating and ordering are unaffected.
+   ============================================================ */
+:root {
+  --density-card-pad: 9px 10px 8px;
+  --density-card-gap: 8px;
+  --density-body-pad: 8px;
+  --density-title: 12px;
+  --density-col-width: 268px;
+  --density-head-pad: 7px 8px;
+  --density-meta-gap: 4px;
+  --density-meta-top: 6px;
+}
+html[data-density='normal'] {
+  --density-card-pad: 13px 14px 12px;
+  --density-card-gap: 12px;
+  --density-body-pad: 12px;
+  --density-title: 13px;
+  --density-col-width: 300px;
+  --density-head-pad: 9px 10px;
+  --density-meta-gap: 6px;
+  --density-meta-top: 8px;
+}
+
+html[data-show-priority='0'] .card::before,
+html[data-show-priority='0'] .chip.prio {
+  display: none;
+}
+html[data-show-labels='0'] .chip.label {
+  display: none;
+}
+html[data-show-due='0'] .chip.due,
+html[data-show-due='0'] .chip.due-today,
+html[data-show-due='0'] .chip.due-overdue {
+  display: none;
+}
+html[data-show-status='0'] .chip.blocked,
+html[data-show-status='0'] .chip.override,
+html[data-show-status='0'] .chip.blocks {
+  display: none;
+}
+
+/* Highlight fills are graded by chroma, not by a single mix ratio: the palette runs
+   pink -> orange -> cream, and equal mixes collapse P0 and P1 into the same dark maroon
+   (measured 5-9 RGB apart). P0 therefore takes the strongest wash so urgency still reads in
+   the fill, P1 sits in the middle, and P2 — near-desaturated cream — needs a heavy mix to
+   register at all. Cream is the binding constraint: past 38% its fill drops below AA for the
+   card text. Measured on the live board at these values, against the coffee-bean card surface of
+   rgb(31,24,25): P0 rgb(117,37,58) contrast 8.3, P1 rgb(84,42,34) contrast 9.9, P2 rgb(97,93,80)
+   contrast 5.4 — pairwise gaps 41/70/63, lifts from the surface 93/57/110, so no tier is closer
+   to the plain card than the eye can see. The mixes read the card surface from `--card-bg`, so
+   they followed the surface when it changed from navy to warm without being retuned by hand. */
+html[data-highlight-priority='1'] .card[data-prio='1'] {
+  background: color-mix(in oklab, var(--color-priority-p0) 44%, var(--card-bg));
+  border-color: color-mix(in oklab, var(--color-priority-p0) 48%, var(--line));
+}
+html[data-highlight-priority='1'] .card[data-prio='2'] {
+  background: color-mix(in oklab, var(--color-priority-p1) 28%, var(--card-bg));
+  border-color: color-mix(in oklab, var(--color-priority-p1) 48%, var(--line));
+}
+html[data-highlight-priority='1'] .card[data-prio='3'] {
+  background: color-mix(in oklab, var(--color-priority-p2) 34%, var(--card-bg));
+  border-color: color-mix(in oklab, var(--color-priority-p2) 34%, var(--line));
+}
+/* An emphasised border is the tint's way of saying "P0" and the cane's way of saying "depends" —
+   two border systems on one edge read as neither. So while a card is carrying a dependency cane
+   the tint keeps its fill and gives up its border, and the cane is drawn against the plain line
+   instead of a pale priority-coloured one at 40% alpha, which washed it out.
+   Listed per tier so the selector carries the same attribute count as the rules it overrides:
+   an equally-specific rule later in the sheet wins, but a less specific one would not. */
+html[data-highlight-priority='1'] .card[data-prio='1'][data-chain],
+html[data-highlight-priority='1'] .card[data-prio='2'][data-chain],
+html[data-highlight-priority='1'] .card[data-prio='3'][data-chain] {
+  border-color: var(--line);
+}
+
+.view-rows {
+  border: 1px solid var(--line);
+  margin-top: 10px;
+}
+.view-rows:empty {
+  display: none;
+}
+.view-row {
+  display: flex;
+  padding: 6px;
+  border-bottom: 1px solid var(--line);
+  background: var(--inset-bg);
+}
+.view-row:last-child {
+  border-bottom: 0;
+}
+.sub-label {
+  display: block;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-foreground-muted);
+  margin-bottom: 4px;
+}

@@ -14,8 +14,9 @@ import {
 } from "@/lib/graph";
 import { PRIORITIES, titleCaseLabel } from "@/lib/format";
 import { pushToast } from "@/stores/toast.store";
-import { attemptMove } from "@/app/board/move-gate";
-import { cyclePathFor } from "./cycle";
+import { attemptMove } from "@/lib/move-gate";
+import { cyclePathFor } from "@/lib/cycle";
+import { BlockerField } from "@/components/overlays/BlockerField";
 
 /** `CREATED 2026-09-19 14:03` — the drawer's meta line stamp. */
 function stampDateTime(iso: string): string {
@@ -51,7 +52,6 @@ export function CardDrawer() {
   const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
   const [due, setDue] = useState("");
-  const [blockerQuery, setBlockerQuery] = useState("");
   const labelInputRef = useRef<HTMLInputElement>(null);
 
   /**
@@ -80,7 +80,6 @@ export function CardDrawer() {
     setNotes(target.notes);
     setDue(target.due);
     drafts.current = { title: target.title, notes: target.notes, due: target.due };
-    setBlockerQuery("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCardId, cardDialogOpen]);
 
@@ -269,21 +268,6 @@ export function CardDrawer() {
     });
   };
 
-  // the picker: candidates in column order, filtered by the query, cycles disabled
-  const query = blockerQuery.trim().toLowerCase();
-  const candidates = board.columns.flatMap((col) =>
-    col.cardIds
-      .map((id) => getCard(board, id))
-      .filter(
-        (candidate): candidate is Card =>
-          !!candidate &&
-          candidate.id !== target.id &&
-          !target.blockedBy.includes(candidate.id) &&
-          (!query || candidate.title.toLowerCase().includes(query))
-      )
-      .map((candidate) => ({ candidate, column: col }))
-  );
-  const shownCandidates = candidates.slice(0, 8);
 
   const blockers = blockersOf(board, target.id);
   const unfinished = unfinishedBlockers(board, target.id);
@@ -453,92 +437,21 @@ export function CardDrawer() {
             </button>
           </div>
         </div>
-        <div className="field">
-          <span className="field-label" id="card-blockers-label">
-            {blockers.length
-              ? `BLOCKED BY — ${unfinished.length} OF ${blockers.length} UNFINISHED`
-              : "BLOCKED BY"}
-          </span>
-          <div className="chips" id="card-blockers">
-            {blockers.length === 0 && <span className="hint">NOTHING BLOCKS THIS CARD</span>}
-            {blockers.map((blocker) => {
-              const blockerColumn = columnOf(board, blocker.id);
-              const done = isDoneColumn(blockerColumn);
-              return (
-                <button
-                  key={blocker.id}
-                  className="chip"
-                  type="button"
-                  data-remove-blocker={blocker.id}
-                  style={done ? undefined : { color: "var(--color-accent)" }}
-                  title={done ? "Completed blocker — remove the link" : "Unfinished blocker — remove the link"}
-                  onClick={() =>
-                    patch({ blockedBy: target.blockedBy.filter((id) => id !== blocker.id) })
-                  }
-                >
-                  {`#${blocker.number} ${blocker.title} — ${
-                    done ? "DONE" : blockerColumn ? blockerColumn.name : "UNPLACED"
-                  } ×`}
-                </button>
-              );
-            })}
-          </div>
-          <input
-            className="input"
-            id="card-blocker-input"
-            placeholder="ADD BLOCKER — TYPE TO FILTER"
-            autoComplete="off"
-            spellCheck={false}
-            value={blockerQuery}
-            onChange={(event) => setBlockerQuery(event.currentTarget.value)}
-            onKeyDown={(event) => {
-              if (event.key !== "Enter") return;
-              event.preventDefault();
-              const candidate = shownCandidates[0];
-              if (!candidate) {
-                pushToast("warn", "NO ADDABLE CARD MATCHES THAT FILTER");
-                return;
-              }
-              setBlockerQuery("");
-              addBlocker(candidate.candidate.id);
-            }}
-          />
-          <div className="picker" id="card-blocker-picker">
-            {candidates.length === 0 ? (
-              <p className="picker-note">{query ? "NO MATCHING CARD" : "NO OTHER CARDS AVAILABLE"}</p>
-            ) : (
-              <>
-                {shownCandidates.map(({ candidate, column: candidateColumn }) => {
-                  const cycle = cyclePathFor(board, target.id, candidate.id);
-                  return (
-                    <button
-                      key={candidate.id}
-                      type="button"
-                      data-blocker-id={candidate.id}
-                      disabled={!!cycle}
-                      title={
-                        cycle
-                          ? `Would create a cycle: ${cardNames(board, cycle).join(" → ")}`
-                          : `Make "${candidate.title}" block this card`
-                      }
-                      onClick={() => {
-                        setBlockerQuery("");
-                        addBlocker(candidate.id);
-                      }}
-                    >
-                      <span>{candidate.title}</span>
-                      <span className="picker-col">{` — ${candidateColumn.name}`}</span>
-                      {cycle && <span className="picker-col"> · CYCLE</span>}
-                    </button>
-                  );
-                })}
-                {candidates.length > shownCandidates.length && (
-                  <p className="picker-note">{`+${candidates.length - shownCandidates.length} MORE — REFINE THE FILTER`}</p>
-                )}
-              </>
-            )}
-          </div>
-        </div>
+        <BlockerField
+          /* keyed by card: switching cards does not hit the drawer's early
+             return, so React reconciles this component in place and its filter
+             state would survive — the next card would open pre-filtered */
+          key={target.id}
+          board={board}
+          card={target}
+          blockers={blockers}
+          unfinishedCount={unfinished.length}
+          columnOf={(cardId) => columnOf(board, cardId)}
+          onAddBlocker={addBlocker}
+          onRemoveBlocker={(blockerId) =>
+            patch({ blockedBy: target.blockedBy.filter((id) => id !== blockerId) })
+          }
+        />
         <div className="field">
           <span className="field-label">BLOCKS</span>
           <div className="chips" id="card-blocks">

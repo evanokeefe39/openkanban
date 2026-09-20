@@ -2,7 +2,7 @@
 
 import type { Column } from "@/lib/types";
 import { useViewStore } from "@/stores/view.store";
-import { addCardToColumn } from "./add-flow";
+import { addCardToColumn } from "@/lib/add-flow";
 
 /**
  * The inline composer, kept in its own module so `Column` stays a face. The
