@@ -152,6 +152,17 @@ export function CardDrawer() {
     patch({ title: value }, deferred);
   };
 
+  /**
+   * Write every pending draft at close time.
+   *
+   * Reads the INPUTS, not the React state. `title`/`notes`/`due` are updated by
+   * `onChange`, and on a fast machine the close lands before React has committed
+   * the last one — so the state is a keystroke behind and the edit is written
+   * back as its previous value. Measured on CI: B14 typed a title, pressed
+   * Escape, and storage kept the old title while the input showed the new one.
+   * The DOM is the source of truth for what the user typed; the state is a copy
+   * that may not have caught up.
+   */
   const flushFields = () => {
     // Drain anything a blur queued before writing the drafts, so a close cannot
     // land on top of a pending edit and lose it (and so the two writes happen in
@@ -159,12 +170,17 @@ export function CardDrawer() {
     const queued = pendingCommits.current;
     pendingCommits.current = [];
     for (const flush of queued) flush();
-    if (title.trim().replace(/\s+/g, " ") && title.trim().replace(/\s+/g, " ") !== target.title) {
-      updateTitle(title);
-    } else if (!title.trim()) {
+
+    const liveTitle = ref.current?.querySelector<HTMLInputElement>("#card-title")?.value ?? title;
+    const liveNotes = ref.current?.querySelector<HTMLTextAreaElement>("#card-notes")?.value ?? notes;
+
+    const normalised = liveTitle.trim().replace(/\s+/g, " ");
+    if (normalised && normalised !== target.title) {
+      updateTitle(liveTitle);
+    } else if (!normalised) {
       setTitle(target.title);
     }
-    if (notes !== target.notes) patch({ notes });
+    if (liveNotes !== target.notes) patch({ notes: liveNotes });
     if (due !== target.due) patch({ due });
   };
 
