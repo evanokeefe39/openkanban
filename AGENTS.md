@@ -3,14 +3,21 @@
 Read this before changing anything here. It is the project's operating manual: what the app is, the
 one rule that shapes it, how to run and verify it, and the conventions a change must follow.
 
-> **A port to React 19 / Next.js 16 is in progress on `feat/next-react-port` and takes precedence over
-> new feature work on the vanilla app.** Phase 0 (the static-export scaffold, with the vanilla app left
-> in place as the reference) and Phase 0.5 (the dual-target behaviour suite that decides whether the
-> port is correct) are built. Read [`tasks/plans/next-react-port.md`](tasks/plans/next-react-port.md)
-> for the phases and [`tasks/plans/react-port-validation.md`](tasks/plans/react-port-validation.md)
-> for the feature inventory, the DOM contract both apps are addressed through, and the ledger that
-> makes "no check was dropped" an assertion. Everything below describes the vanilla implementation,
-> which remains the reference until the port is verified.
+> **The React 19 / Next.js 16 port is complete and is now the app.** It landed on
+> `feat/next-react-port` through Phases 0–5: the pure model as framework-free TypeScript, the
+> component tree, drag and drop on pointer events, and the dual-target behaviour suite that proves
+> it. The gate flipped at cutover — `npm run behaviour` drives the **React app** — and the vanilla
+> `index.html` / `styles.css` / `app.js` are retained as a **frozen historical reference**.
+> Read [`tasks/plans/next-react-port.md`](tasks/plans/next-react-port.md) for the phases and
+> [`tasks/plans/react-port-validation.md`](tasks/plans/react-port-validation.md) for the feature
+> inventory, the DOM contract, and the coverage ledger.
+>
+> **The port is no longer required to mirror the vanilla app.** It was held to bug-for-bug
+> agreement while the comparison was the acceptance test; that test has done its job. Defects the
+> vanilla app carries are now fixed in the port rather than inherited — see the drawer blur-commit
+> in `ISSUES.md`. The Architecture and Conventions sections below still describe the **vanilla**
+> implementation; the port's structure is `lib/` (pure model), `stores/` (state), `app/board/`
+> (components).
 
 ## What this is
 
@@ -48,18 +55,21 @@ npm run serve     # dev server on :8080, no-cache (use this, not python -m http.
 npm run check     # syntax of every entry point + every var() resolves
 npm test          # the smoke suite: 31 checks, real browser, real page
 
-npm run build     # the port's static export -> out/ (also runs the TypeScript check)
-npm run behaviour # the dual-target behaviour suite, GATING on the vanilla app
-npm run behaviour:react   # the port's progress — report only until Phase 5
+npm run build     # the app's static export -> out/ (also runs the TypeScript check)
+npm run behaviour # the acceptance gate: builds, then drives the React app against the ledger
+npm run behaviour:reference  # the frozen vanilla app, report only — never gates
 npm run compare   # diff the two reports: green on vanilla + red on React = a named regression
 ```
 
-`npm run behaviour` is the port's acceptance gate and runs the same checks against both apps. It
-enforces a **coverage ledger**: an inventory feature with no covering check fails the run, and so does
-any of `tests/smoke.mjs`'s checks with no live successor. Two asymmetries are declared rather than
-hidden — the drag gesture can only be driven on the React target (Playwright cannot synthesise an HTML5
-`drop`) and `file://` only works on the vanilla one — and a deferred feature is printed, never counted
-as covered.
+`npm run behaviour` is the acceptance gate. It builds the app, drives every check against the real
+export, and enforces a **coverage ledger**: an inventory feature with no covering check fails the run,
+and so does any of `tests/smoke.mjs`'s checks with no live successor. Two asymmetries are declared
+rather than hidden — the drag gesture can only be driven on the React target (Playwright cannot
+synthesise an HTML5 `drop`) and `file://` only works on the vanilla one — and a deferred feature is
+printed, never counted as covered.
+
+`npm run behaviour:reference` drives the vanilla app in **report mode**: it prints its results and its
+declared defects but cannot fail the build. It is a comparison baseline now, not a gate.
 
 On Windows, Playwright's pinned Chromium download fails on some machines. Run the suite with a
 system browser instead:

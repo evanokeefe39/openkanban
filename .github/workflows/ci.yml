@@ -3,17 +3,18 @@ name: CI
 # The app is static files, so "does it work" cannot be answered by a build
 # succeeding. The gate is a real browser driving the real page.
 #
-# Three jobs, and the difference between them matters:
-#   smoke      — the original 31-check deploy gate for the frozen vanilla reference
-#   behaviour  — the GATE: the behaviour suite against the frozen vanilla
-#                reference, which is the proven app until the user reviews and
-#                confirms the React rebuild
-#   next       — the Rebuild's suite in report mode. Kept green beside the gate,
-#                so "green on the reference, red on the new app" names a
-#                regression instead of being invisible.
+# Three jobs:
+#   smoke      — the legacy 31-check deploy gate, driving the frozen vanilla app
+#   behaviour  — the GATE: the behaviour suite against the React app, built from
+#                source and enforced against the coverage ledger
+#   reference  — the vanilla app in report mode, kept green beside the gate so
+#                "green on the reference, red on the new app" still names a
+#                regression instead of being invisible
 #
-# At cutover the last two flip: the new app becomes the gate and the reference
-# retires with its vanilla files.
+# The gate flipped from the reference to the app once the port was reviewed and
+# confirmed. The vanilla app is a historical comparison now: it is still driven
+# and its defects are still printed, but it no longer decides whether this repo
+# ships, and the port is free to improve past it.
 on:
   push:
     branches: [main]
@@ -61,7 +62,7 @@ jobs:
           if-no-files-found: ignore
 
   behaviour:
-    name: Behaviour suite against the frozen vanilla reference (GATE)
+    name: Behaviour suite against the React app (GATE)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -77,11 +78,9 @@ jobs:
       - name: Install chromium
         run: npx playwright install --with-deps chromium
 
-      # The gate is the PROVEN app. The user has not yet reviewed the React
-      # rebuild, so the frozen vanilla reference is what gates the build and the
-      # new app is reported beside it. Flipping this before sign-off would
-      # remove the "green on the reference, red on the new app = a named
-      # regression" signal the dual-target suite exists to produce.
+      # This builds the Next.js app and then runs every check against the real
+      # export, enforcing the ledger: a required feature with no covering check
+      # fails the run. Exit code is 0 only when everything ran and passed.
       - name: Behaviour suite
         run: npm run behaviour
 
@@ -89,12 +88,12 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: behaviour-reference
+          name: behaviour-app
           path: tests/.artifacts/
           if-no-files-found: ignore
 
-  next:
-    name: Behaviour suite against the React app (report until sign-off)
+  reference:
+    name: Behaviour suite against the vanilla reference (report only)
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -110,16 +109,17 @@ jobs:
       - name: Install chromium
         run: npx playwright install --with-deps chromium
 
-      # Report mode until the user confirms the rebuild: a failure here is a
-      # finding to act on, not a blocked release. Flip the two jobs over at
-      # cutover, when the new app becomes the app.
-      - name: Behaviour suite (new app)
-        run: npm run behaviour:next
+      # Report mode, deliberately: this app is frozen as the comparison baseline,
+      # and the defect that reds it (a blur-commit rebuilding the drawer under the
+      # pointer, ISSUES.md) is one the port has already fixed rather than
+      # inherited. Blocking on it would hold the port to a defect it no longer has.
+      - name: Behaviour suite (reference)
+        run: npm run behaviour:reference
 
-      - name: Upload the new app's report
+      - name: Upload the reference report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: behaviour-next
+          name: behaviour-reference
           path: tests/.artifacts/
           if-no-files-found: ignore
