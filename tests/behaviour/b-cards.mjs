@@ -359,6 +359,15 @@ export default {
           await ctx.page.fill(sel.drawerNotes, "Some notes about the port");
           step("close 3");
           await ctx.closeDrawer();
+          // read AFTER the write settles, not through it: on a fast runner the
+          // drawer's close-flush (a queued commit drained on the next frame)
+          // can land after `open === false` is observable, so an immediate
+          // storage read sees the pre-close document. This run's CI evidence:
+          // read 3 saw no notes, while read 4 saw the title — the write landed,
+          // the read was early. Two frames is what B15 already uses; the
+          // assertion itself is untouched, and if the write never happens the
+          // check still fails below.
+          await ctx.waitFrames();
           step("read 3");
           stored = await ctx.storedCard(id);
           const textPersisted =
@@ -642,6 +651,11 @@ export default {
         );
         await ctx.press("Escape");
         await ctx.waitFor(() => document.querySelector("#card-dialog").open === false);
+        // read AFTER the write settles, not through it — same reasoning as B7's
+        // read 3: the blur Escape causes queues its commit for the next frame,
+        // and a fast runner can observe `open === false` before that frame.
+        // Four of five CI runs lost this race; the local full suite never has.
+        await ctx.waitFrames();
         const stored = (await ctx.storedCard(id)).title;
         return ok(pending === "Flushed by escape" && stored === "Flushed by escape", {
           pending,
