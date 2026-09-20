@@ -180,6 +180,12 @@ proof that a feature works.
 
 ## Where the other documents live
 
+> **Provenance note.** Comments in the code and prose in `ISSUES.md` cite `app.js` by line
+> number ("ported from app.js:1234"). Those citations resolve only against the deleted vanilla
+> baseline, which lives on the `feat/mvp` branch (`2adec2d`, "docs: license the project under
+> PolyForm Noncommercial 1.0.0"). They are kept because provenance that names its origin is
+> load-bearing; re-resolve them with `git show feat/mvp:app.js` when a citation matters.
+
 | File | What it is for |
 | --- | --- |
 | `README.md` | the public face: what it does, how to run it, how to deploy it |
