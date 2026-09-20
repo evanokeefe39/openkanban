@@ -8,12 +8,8 @@
     "dev": "next dev",
     "build": "next build",
     "check": "node tests/check-syntax.mjs && node tests/check-styles.mjs",
-    "test": "node tests/smoke.mjs",
     "behaviour": "node tests/run-behaviour.mjs --target react",
     "behaviour:next": "node tests/run-behaviour.mjs --target react --mode report",
-    "behaviour:reference": "node tests/run-behaviour.mjs --target vanilla --mode report",
-    "behaviour:both": "node tests/run-behaviour.mjs --target both --mode report",
-    "compare": "node tests/run-behaviour.mjs --compare",
     "lib:test": "vitest run"
   },
   "engines": {
