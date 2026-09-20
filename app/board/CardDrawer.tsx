@@ -54,6 +54,24 @@ export function CardDrawer() {
   const [blockerQuery, setBlockerQuery] = useState("");
   const labelInputRef = useRef<HTMLInputElement>(null);
 
+  /**
+   * The drafts, mirrored in a ref on every keystroke.
+   *
+   * The close-time flush cannot read either of the obvious sources, and this was
+   * measured in a live browser rather than reasoned about:
+   *
+   *  - the INPUT is gone by then. Instrumenting the dialog's `close` event showed
+   *    `#card-title` already unmounted (`inputValue: null`), because closing the
+   *    dialog re-renders the drawer's body away before the handler runs.
+   *  - the React STATE may not have committed the last keystroke. On CI the suite
+   *    runs ~6x faster than locally, and B14 typed a title, pressed Escape, and
+   *    storage kept the old title while the input had shown the new one.
+   *
+   * A ref is written synchronously by onChange, so it is current at close time
+   * whatever the DOM or the render queue are doing.
+   */
+  const drafts = useRef({ title: "", notes: "", due: "" });
+
   // fresh drafts whenever the drawer is (re)opened for a card
   useEffect(() => {
     const target = board && activeCardId ? getCard(board, activeCardId) : null;
@@ -61,6 +79,7 @@ export function CardDrawer() {
     setTitle(target.title);
     setNotes(target.notes);
     setDue(target.due);
+    drafts.current = { title: target.title, notes: target.notes, due: target.due };
     setBlockerQuery("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCardId, cardDialogOpen]);
@@ -153,15 +172,8 @@ export function CardDrawer() {
   };
 
   /**
-   * Write every pending draft at close time.
-   *
-   * Reads the INPUTS, not the React state. `title`/`notes`/`due` are updated by
-   * `onChange`, and on a fast machine the close lands before React has committed
-   * the last one — so the state is a keystroke behind and the edit is written
-   * back as its previous value. Measured on CI: B14 typed a title, pressed
-   * Escape, and storage kept the old title while the input showed the new one.
-   * The DOM is the source of truth for what the user typed; the state is a copy
-   * that may not have caught up.
+   * Write every pending draft at close time, from the ref — see `drafts` above
+   * for why neither the DOM nor the state can be trusted here.
    */
   const flushFields = () => {
     // Drain anything a blur queued before writing the drafts, so a close cannot
@@ -171,17 +183,17 @@ export function CardDrawer() {
     pendingCommits.current = [];
     for (const flush of queued) flush();
 
-    const liveTitle = ref.current?.querySelector<HTMLInputElement>("#card-title")?.value ?? title;
-    const liveNotes = ref.current?.querySelector<HTMLTextAreaElement>("#card-notes")?.value ?? notes;
+    const { title: draftTitle, notes: draftNotes, due: draftDue } = drafts.current;
 
-    const normalised = liveTitle.trim().replace(/\s+/g, " ");
+    const normalised = draftTitle.trim().replace(/\s+/g, " ");
     if (normalised && normalised !== target.title) {
-      updateTitle(liveTitle);
+      updateTitle(draftTitle);
     } else if (!normalised) {
       setTitle(target.title);
+      drafts.current.title = target.title;
     }
-    if (liveNotes !== target.notes) patch({ notes: liveNotes });
-    if (due !== target.due) patch({ due });
+    if (draftNotes !== target.notes) patch({ notes: draftNotes });
+    if (draftDue !== target.due) patch({ due: draftDue });
   };
 
   const addLabel = () => {
@@ -328,7 +340,10 @@ export function CardDrawer() {
             type="text"
             spellCheck={false}
             value={title}
-            onChange={(event) => setTitle(event.currentTarget.value)}
+            onChange={(event) => {
+              setTitle(event.currentTarget.value);
+              drafts.current.title = event.currentTarget.value;
+            }}
             /* deferred: a click landing on a drawer control fires this blur first, and committing
                here would rebuild that control before its mouseup (ISSUES.md) */
             onBlur={(event) => updateTitle(event.currentTarget.value, true)}
@@ -342,7 +357,10 @@ export function CardDrawer() {
             rows={5}
             spellCheck={false}
             value={notes}
-            onChange={(event) => setNotes(event.currentTarget.value)}
+            onChange={(event) => {
+              setNotes(event.currentTarget.value);
+              drafts.current.notes = event.currentTarget.value;
+            }}
             /* deferred for the same reason as the title above */
             onBlur={(event) => patch({ notes: event.currentTarget.value }, true)}
           />
@@ -374,6 +392,7 @@ export function CardDrawer() {
               value={due}
               onChange={(event) => {
                 setDue(event.currentTarget.value);
+                drafts.current.due = event.currentTarget.value;
                 patch({ due: event.currentTarget.value });
               }}
             />
@@ -383,6 +402,7 @@ export function CardDrawer() {
               type="button"
               onClick={() => {
                 setDue("");
+                drafts.current.due = "";
                 patch({ due: "" });
               }}
             >
